@@ -147,8 +147,17 @@
   .legend span { display: inline-flex; align-items: center; }
   .sw { width: 12px; height: 12px; border-radius: 50%; border: 2px solid; margin-right: 6px; display: inline-block; }
 
+  .setup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+  .setup .label { color: var(--ink); font-weight: 600; margin-right: 2px; }
+  .setup .side-label { margin-left: 4px; }
+  .seg.sm { padding: 2px; border-radius: 8px; }
+  .seg.sm button { padding: 5px 10px; font-size: 13px; border-radius: 6px; }
+  .fname { margin-left: auto; }
+
   @media (max-width: 420px) {
     .seg button { padding: 7px 11px; font-size: 13px; }
+    .seg.sm button { padding: 5px 9px; }
+    .fname { margin-left: 0; width: 100%; }
     .btn { padding: 8px 11px; font-size: 13px; }
   }
 </style>
@@ -161,7 +170,7 @@
   </header>
 
   <div class="bar">
-    <div class="seg" role="group" aria-label="난이도">
+    <div class="seg" id="levelSeg" role="group" aria-label="난이도">
       <button data-level="1">초급</button>
       <button data-level="2">중급</button>
       <button data-level="3">전문가</button>
@@ -170,6 +179,19 @@
       <button class="btn" id="undoBtn">무르기</button>
       <button class="btn" id="newBtn">새 게임</button>
     </div>
+  </div>
+
+  <div class="setup">
+    <span class="label">상차림</span>
+    <span class="side-label">왼쪽</span>
+    <div class="seg sm" data-side="l" role="group" aria-label="왼쪽 상차림">
+      <button data-v="NE">마상</button><button data-v="EN">상마</button>
+    </div>
+    <span class="side-label">오른쪽</span>
+    <div class="seg sm" data-side="r" role="group" aria-label="오른쪽 상차림">
+      <button data-v="NE">마상</button><button data-v="EN">상마</button>
+    </div>
+    <span class="fname" id="fname"></span>
   </div>
 
   <div class="status"><div id="status"></div><div id="moves"></div></div>
@@ -545,10 +567,22 @@ function think(board, side, level) {
     document.getElementById('grid').innerHTML = g;
   })();
 
+  // 상차림: 'NE' = 마상, 'EN' = 상마 (화면에서 왼쪽→오른쪽 순서)
+  var FORMATION = { NENE: '마상마상', NEEN: '마상상마 (원앙마)', ENNE: '상마마상 (귀마)', ENEN: '상마상마' };
+  var setup = { l: 'EN', r: 'EN' }, aiSetup = null;
+  try {
+    var ss = JSON.parse(localStorage.getItem('janggi-setup'));
+    if (ss && /^(NE|EN)$/.test(ss.l) && /^(NE|EN)$/.test(ss.r)) setup = ss;
+  } catch (e) {}
+
+  function pair(v) { return v === 'NE' ? [N, E] : [E, N]; }
+  function backRow(s) { var l = pair(s.l), r = pair(s.r); return [R, l[0], l[1], A, 0, A, r[0], r[1], R]; }
+  function randomSetup() { return { l: Math.random() < 0.5 ? 'NE' : 'EN', r: Math.random() < 0.5 ? 'NE' : 'EN' }; }
+
   function initialBoard() {
     var b = new Int8Array(90);
-    var back = [R, E, N, A, 0, A, E, N, R];
-    for (var c = 0; c < 9; c++) { b[c] = -back[c]; b[81 + c] = back[c]; }
+    var mine = backRow(setup), ai = backRow(aiSetup);
+    for (var c = 0; c < 9; c++) { b[c] = -ai[c]; b[81 + c] = mine[c]; }
     b[13] = -K; b[76] = K;
     b[19] = b[25] = -C; b[64] = b[70] = C;
     [0, 2, 4, 6, 8].forEach(function (c) { b[27 + c] = -P; b[54 + c] = P; });
@@ -617,9 +651,14 @@ function think(board, side, level) {
     }
     movesEl.textContent = LEVEL_NAME[level] + ' · ' + history.length + '수';
 
-    document.querySelectorAll('.seg button').forEach(function (btn) {
+    document.querySelectorAll('#levelSeg button').forEach(function (btn) {
       btn.setAttribute('aria-pressed', String(+btn.dataset.level === level));
     });
+    document.querySelectorAll('.seg[data-side] button').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(setup[btn.parentNode.dataset.side] === btn.dataset.v));
+    });
+    document.getElementById('fname').textContent = FORMATION[setup.l + setup.r] +
+      (history.length && !gameOver ? ' · 다음 판부터 적용' : '');
     var canUndo = history.some(function (h) { return h.side === 1; });
     document.getElementById('undoBtn').disabled = !canUndo;
     document.getElementById('undoBtn2').disabled = !canUndo;
@@ -725,6 +764,7 @@ function think(board, side, level) {
   // ---- 조작 ----
   function newGame() {
     cancelAI();
+    aiSetup = randomSetup();
     board = initialBoard();
     history = [];
     turn = 1; gameOver = false; winner = null; selected = null; lastAI = null; checkUser = false;
@@ -770,10 +810,23 @@ function think(board, side, level) {
     render();
   });
 
-  document.querySelectorAll('.seg button').forEach(function (btn) {
+  document.querySelectorAll('#levelSeg button').forEach(function (btn) {
     btn.addEventListener('click', function () {
       level = +btn.dataset.level;
       try { localStorage.setItem('janggi-level', String(level)); } catch (e) {}
+      render();
+    });
+  });
+  document.querySelectorAll('.seg[data-side] button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setup[btn.parentNode.dataset.side] = btn.dataset.v;
+      try { localStorage.setItem('janggi-setup', JSON.stringify(setup)); } catch (e) {}
+      // 아직 한 수도 두지 않았으면 바로 판에 반영
+      if (!history.length) {
+        board = initialBoard();
+        selected = null;
+        userMoves = legalMoves(board, 1);
+      }
       render();
     });
   });
