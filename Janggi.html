@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>장기</title>
+<style>
+  :root {
+    --bg: #f3f0e9;
+    --panel: #fbfaf6;
+    --ink: #2f2b26;
+    --muted: #8a8177;
+    --border: #ddd5c7;
+    --board: #e7d8b6;
+    --board-edge: #d9c59c;
+    --line: #8c7656;
+    --piece: #fbf6ea;
+    --cho: #2e6b5a;
+    --han: #a8423d;
+    --accent: #e08a2a;
+    --sel: #3b6ea5;
+    --check: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1b19;
+      --panel: #252421;
+      --ink: #ebe6dc;
+      --muted: #9c948a;
+      --border: #3a3833;
+      --board: #c8b288;
+      --board-edge: #b39c70;
+      --line: #6e5a3e;
+      --piece: #f4ecdb;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 20px 16px 32px;
+  }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: 0.02em; }
+  .sub { font-size: 13px; color: var(--muted); margin: 0; }
+  .sub .c { color: var(--cho); font-weight: 600; }
+  .sub .h { color: var(--han); font-weight: 600; }
+
+  .bar { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
+  .seg {
+    display: inline-flex;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 14px;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .btn:hover, .seg button:hover { filter: brightness(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; color: var(--muted);
+    padding: 0 2px 10px;
+    min-height: 28px;
+  }
+  .status strong { color: var(--ink); font-weight: 600; }
+  .status .warn { color: var(--check); font-weight: 600; margin-left: 6px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .thinking::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+  .board-wrap { position: relative; }
+  svg#board {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+    background: var(--board);
+    box-shadow: 0 1px 0 var(--board-edge), 0 6px 20px rgba(0,0,0,0.08);
+    touch-action: manipulation;
+    user-select: none;
+    cursor: pointer;
+  }
+  .pc text {
+    font-family: "Noto Serif KR", "Nanum Myeongjo", "Batang", "AppleMyungjo", "Songti SC", serif;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .fresh { animation: pop 0.28s ease-out; transform-box: fill-box; transform-origin: center; }
+  @keyframes pop { from { opacity: 0.2; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+
+  .overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(28, 27, 25, 0.38);
+    border-radius: 12px;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  .overlay[hidden] { display: none; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 26px 30px 22px;
+    text-align: center;
+    min-width: 240px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  }
+  .card h2 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0.08em; font-weight: 700; }
+  .card p { margin: 0 0 18px; font-size: 16px; }
+  .card .actions { justify-content: center; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 12px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; }
+  .sw { width: 12px; height: 12px; border-radius: 50%; border: 2px solid; margin-right: 6px; display: inline-block; }
+
+  @media (max-width: 420px) {
+    .seg button { padding: 7px 11px; font-size: 13px; }
+    .btn { padding: 8px 11px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>장기</h1>
+    <p class="sub"><span class="c">나 · 초</span> &nbsp;vs&nbsp; <span class="h">컴퓨터 · 한</span></p>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="난이도">
+      <button data-level="1">초급</button>
+      <button data-level="2">중급</button>
+      <button data-level="3">전문가</button>
+    </div>
+    <div class="actions">
+      <button class="btn" id="undoBtn">무르기</button>
+      <button class="btn" id="newBtn">새 게임</button>
+    </div>
+  </div>
+
+  <div class="status"><div id="status"></div><div id="moves"></div></div>
+
+  <div class="board-wrap">
+    <svg id="board" viewBox="0 0 560 620" xmlns="http://www.w3.org/2000/svg">
+      <g id="grid"></g>
+      <g id="layer"></g>
+    </svg>
+    <div class="overlay" id="overlay" hidden>
+      <div class="card">
+        <h2>Game Over</h2>
+        <p id="winnerText"></p>
+        <div class="actions">
+          <button class="btn" id="undoBtn2">무르기</button>
+          <button class="btn primary" id="newBtn2">새 게임</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="sw" style="border-color:var(--accent);background:rgba(224,138,42,.25)"></i>상대의 최근 수</span>
+    <span><i class="sw" style="border-color:var(--sel)"></i>선택 / 이동 가능</span>
+  </div>
+</main>
+
+<!-- 장기 엔진: 메인 스레드와 Web Worker가 함께 사용 -->
+<script id="engine">
+var K = 1, R = 2, C = 3, N = 4, E = 5, A = 6, P = 7;
+var MATE = 100000, INF = 1e9;
+var PV = [0, 0, 130, 70, 50, 30, 30, 20];
+var LINES = [[3, 13, 23], [5, 13, 21], [66, 76, 86], [68, 76, 84]];
+var DIAG = [];
+for (var i0 = 0; i0 < 90; i0++) DIAG.push([]);
+LINES.forEach(function (L) { L.forEach(function (q, pos) { DIAG[q].push([L, pos]); }); });
+var ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+var LEVELS = {
+  1: { depth: 1, noise: 70, q: 1, time: 1500 },
+  2: { depth: 3, noise: 10, q: 4, time: 3000 },
+  3: { depth: 12, noise: 0, q: 6, time: 3500 }
+};
+var ABORT = { abort: true };
+var nodes = 0, deadline = 0, killers = null, QMAX = 6;
+
+function onB(r, c) { return r >= 0 && r < 10 && c >= 0 && c < 9; }
+function ownPal(side, r, c) { return c >= 3 && c <= 5 && (side > 0 ? r >= 7 && r <= 9 : r >= 0 && r <= 2); }
+
+// 의사 합법 수 생성 (자기 궁이 잡히는지는 검사하지 않음)
+function gen(b, side, capOnly) {
+  var out = [];
+  function add(f, t) {
+    var q = b[t];
+    if (q && (q > 0) === (side > 0)) return;
+    if (capOnly && !q) return;
+    out.push((f << 7) | t);
+  }
+  function enemy(q) { return q && (q > 0) !== (side > 0); }
+  for (var i = 0; i < 90; i++) {
+    var p = b[i];
+    if (!p || (p > 0) !== (side > 0)) continue;
+    var t = p > 0 ? p : -p, r = (i / 9) | 0, c = i % 9, d, k, nr, nc, j, q, L, pos;
+    switch (t) {
+      case K:
+      case A:
+        for (d = 0; d < 4; d++) {
+          nr = r + ORTH[d][0]; nc = c + ORTH[d][1];
+          if (ownPal(side, nr, nc)) add(i, nr * 9 + nc);
+        }
+        for (k = 0; k < DIAG[i].length; k++) {
+          L = DIAG[i][k][0]; pos = DIAG[i][k][1];
+          if (pos - 1 >= 0) add(i, L[pos - 1]);
+          if (pos + 1 <= 2) add(i, L[pos + 1]);
+        }
+        break;
+      case R:
+        for (d = 0; d < 4; d++) {
+          nr = r + ORTH[d][0]; nc = c + ORTH[d][1];
+          while (onB(nr, nc)) {
+            j = nr * 9 + nc; q = b[j];
+            if (!q) add(i, j); else { if (enemy(q)) add(i, j); break; }
+            nr += ORTH[d][0]; nc += ORTH[d][1];
+          }
+        }
+        for (k = 0; k < DIAG[i].length; k++) {
+          L = DIAG[i][k][0]; pos = DIAG[i][k][1];
+          for (var s = -1; s <= 1; s += 2) {
+            var x = pos + s;
+            while (x >= 0 && x <= 2) {
+              j = L[x]; q = b[j];
+              if (!q) add(i, j); else { if (enemy(q)) add(i, j); break; }
+              x += s;
+            }
+          }
+        }
+        break;
+      case C:
+        for (d = 0; d < 4; d++) {
+          nr = r + ORTH[d][0]; nc = c + ORTH[d][1];
+          var jumped = false;
+          while (onB(nr, nc)) {
+            j = nr * 9 + nc; q = b[j];
+            if (!jumped) {
+              if (q) { if (q === C || q === -C) break; jumped = true; }
+            } else {
+              if (!q) add(i, j);
+              else { if (enemy(q) && q !== C && q !== -C) add(i, j); break; }
+            }
+            nr += ORTH[d][0]; nc += ORTH[d][1];
+          }
+        }
+        for (k = 0; k < DIAG[i].length; k++) {
+          L = DIAG[i][k][0]; pos = DIAG[i][k][1];
+          if (pos === 1) continue;
+          var sc = b[L[1]];
+          if (sc && sc !== C && sc !== -C) {
+            j = L[2 - pos]; q = b[j];
+            if (!q || (enemy(q) && q !== C && q !== -C)) add(i, j);
+          }
+        }
+        break;
+      case N:
+        for (d = 0; d < 4; d++) {
+          var dr = ORTH[d][0], dc = ORTH[d][1];
+          nr = r + dr; nc = c + dc;
+          if (!onB(nr, nc) || b[nr * 9 + nc]) continue;
+          for (var s2 = -1; s2 <= 1; s2 += 2) {
+            var tr = dr ? r + 2 * dr : r + s2, tc = dr ? c + s2 : c + 2 * dc;
+            if (onB(tr, tc)) add(i, tr * 9 + tc);
+          }
+        }
+        break;
+      case E:
+        for (d = 0; d < 4; d++) {
+          var er = ORTH[d][0], ec = ORTH[d][1];
+          nr = r + er; nc = c + ec;
+          if (!onB(nr, nc) || b[nr * 9 + nc]) continue;
+          for (var s3 = -1; s3 <= 1; s3 += 2) {
+            var mr = er ? r + 2 * er : r + s3, mc = er ? c + s3 : c + 2 * ec;
+            var fr = er ? r + 3 * er : r + 2 * s3, fc = er ? c + 2 * s3 : c + 3 * ec;
+            if (!onB(mr, mc) || b[mr * 9 + mc] || !onB(fr, fc)) continue;
+            add(i, fr * 9 + fc);
+          }
+        }
+        break;
+      case P:
+        var f = side > 0 ? -1 : 1;
+        if (onB(r + f, c)) add(i, (r + f) * 9 + c);
+        if (c > 0) add(i, i - 1);
+        if (c < 8) add(i, i + 1);
+        for (k = 0; k < DIAG[i].length; k++) {
+          L = DIAG[i][k][0]; pos = DIAG[i][k][1];
+          for (var s4 = -1; s4 <= 1; s4 += 2) {
+            var y = pos + s4;
+            if (y >= 0 && y <= 2 && ((L[y] / 9) | 0) === r + f) add(i, L[y]);
+          }
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+function findKing(b, side) {
+  for (var i = 0; i < 90; i++) if (b[i] === side * K) return i;
+  return -1;
+}
+function inCheck(b, side) {
+  var k = findKing(b, side);
+  if (k < 0) return true;
+  var mv = gen(b, -side, true);
+  for (var i = 0; i < mv.length; i++) if ((mv[i] & 127) === k) return true;
+  return false;
+}
+function legalMoves(b, side) {
+  var mv = gen(b, side, false), res = [];
+  for (var i = 0; i < mv.length; i++) {
+    var m = mv[i], f = m >> 7, t = m & 127, cap = b[t];
+    b[t] = b[f]; b[f] = 0;
+    if (!inCheck(b, side)) res.push(m);
+    b[f] = b[t]; b[t] = cap;
+  }
+  return res;
+}
+function hasAttackers(b, side) {
+  for (var i = 0; i < 90; i++) {
+    var p = b[i] * side;
+    if (p === R || p === C || p === N || p === E || p === P) return true;
+  }
+  return false;
+}
+
+// 평가 함수 (초 기준, 양수면 초가 유리)
+function evaluate(b) {
+  var s = 0;
+  for (var i = 0; i < 90; i++) {
+    var p = b[i];
+    if (!p) continue;
+    var t = p > 0 ? p : -p, r = (i / 9) | 0, c = i % 9, v = PV[t];
+    if (t === P) {
+      var adv = p > 0 ? 6 - r : r - 3;
+      v += adv * 4 + (c >= 3 && c <= 5 && adv >= 4 ? 6 : 0);
+    } else if (t === N || t === C) {
+      v += 4 - Math.abs(c - 4);
+    } else if (t === R) {
+      if (p > 0 ? r <= 6 : r >= 3) v += 5;
+    }
+    s += p > 0 ? v : -v;
+  }
+  return s;
+}
+
+function orderMoves(b, mv, ply) {
+  var n = mv.length, keys = new Array(n), kl = killers ? killers[ply] : 0;
+  for (var i = 0; i < n; i++) {
+    var m = mv[i], cap = b[m & 127];
+    if (cap) {
+      var pf = b[m >> 7];
+      keys[i] = 1000 + PV[cap > 0 ? cap : -cap] * 10 - PV[pf > 0 ? pf : -pf];
+    } else keys[i] = m === kl ? 500 : 0;
+  }
+  for (var a = 1; a < n; a++) {
+    var km = keys[a], mm = mv[a], z = a - 1;
+    while (z >= 0 && keys[z] < km) { keys[z + 1] = keys[z]; mv[z + 1] = mv[z]; z--; }
+    keys[z + 1] = km; mv[z + 1] = mm;
+  }
+}
+
+function qsearch(b, alpha, beta, side, ply, qd) {
+  if ((++nodes & 2047) === 0 && Date.now() > deadline) throw ABORT;
+  var caps = gen(b, side, true), ek = -side * K, i;
+  for (i = 0; i < caps.length; i++) if (b[caps[i] & 127] === ek) return MATE - ply;
+  var stand = evaluate(b) * side;
+  if (stand >= beta || qd >= QMAX) return stand;
+  if (stand > alpha) alpha = stand;
+  orderMoves(b, caps, 63);
+  for (i = 0; i < caps.length; i++) {
+    var m = caps[i], f = m >> 7, t = m & 127, cap = b[t];
+    b[t] = b[f]; b[f] = 0;
+    var sc = -qsearch(b, -beta, -alpha, -side, ply + 1, qd + 1);
+    b[f] = b[t]; b[t] = cap;
+    if (sc >= beta) return sc;
+    if (sc > alpha) alpha = sc;
+  }
+  return alpha;
+}
+
+function negamax(b, depth, alpha, beta, side, ply) {
+  if ((++nodes & 2047) === 0 && Date.now() > deadline) throw ABORT;
+  if (depth <= 0) return qsearch(b, alpha, beta, side, ply, 0);
+  var mv = gen(b, side, false), ek = -side * K, i;
+  if (!mv.length) return -MATE + ply;
+  for (i = 0; i < mv.length; i++) if (b[mv[i] & 127] === ek) return MATE - ply;
+  orderMoves(b, mv, ply);
+  var best = -INF;
+  for (i = 0; i < mv.length; i++) {
+    var m = mv[i], f = m >> 7, t = m & 127, cap = b[t];
+    b[t] = b[f]; b[f] = 0;
+    var sc = -negamax(b, depth - 1, -beta, -alpha, -side, ply + 1);
+    b[f] = b[t]; b[t] = cap;
+    if (sc > best) {
+      best = sc;
+      if (sc > alpha) {
+        alpha = sc;
+        if (alpha >= beta) { if (!cap && ply < 64) killers[ply] = m; break; }
+      }
+    }
+  }
+  return best;
+}
+
+// 컴퓨터의 수 결정
+function think(board, side, level) {
+  var b = Int8Array.from(board);
+  var root = legalMoves(b, side);
+  if (!root.length) return -1;
+  if (root.length === 1) return root[0];
+  var cfg = LEVELS[level] || LEVELS[2];
+  var start = Date.now();
+  QMAX = cfg.q; nodes = 0; deadline = start + cfg.time; killers = new Int32Array(65);
+  orderMoves(b, root, 0);
+  var i, m, f, t, cap, sc;
+
+  if (cfg.noise) {
+    var scores = null;
+    for (var d = 1; d <= cfg.depth; d++) {
+      try {
+        var cur = [];
+        for (i = 0; i < root.length; i++) {
+          m = root[i]; f = m >> 7; t = m & 127; cap = b[t];
+          b[t] = b[f]; b[f] = 0;
+          cur.push(-negamax(b, d - 1, -INF, INF, -side, 1));
+          b[f] = b[t]; b[t] = cap;
+        }
+        scores = cur;
+      } catch (e) {
+        if (e !== ABORT) throw e;
+        b.set(board);
+        break;
+      }
+    }
+    if (!scores) return root[0];
+    var bi = 0, bv = -INF;
+    for (i = 0; i < root.length; i++) {
+      var v = scores[i] + (Math.random() * 2 - 1) * cfg.noise;
+      if (scores[i] > MATE / 2) v += 1e6;
+      if (scores[i] < -MATE / 2) v -= 1e6;
+      if (v > bv) { bv = v; bi = i; }
+    }
+    return root[bi];
+  }
+
+  var best = root[0];
+  for (var depth = 1; depth <= cfg.depth; depth++) {
+    try {
+      var alpha = -INF, bm = root[0];
+      for (i = 0; i < root.length; i++) {
+        m = root[i]; f = m >> 7; t = m & 127; cap = b[t];
+        b[t] = b[f]; b[f] = 0;
+        sc = -negamax(b, depth - 1, -INF, -alpha, -side, 1);
+        b[f] = b[t]; b[t] = cap;
+        if (sc > alpha) { alpha = sc; bm = m; }
+      }
+      best = bm;
+      root.splice(root.indexOf(bm), 1);
+      root.unshift(bm);
+      if (alpha > MATE / 2) break;
+      if (Date.now() - start > cfg.time * 0.45) break;
+    } catch (e) {
+      if (e !== ABORT) throw e;
+      b.set(board);
+      break;
+    }
+  }
+  return best;
+}
+</script>
+
+<script>
+(function () {
+  var M = 40, S = 60;
+  var CH = {
+    '1':  { 1: '楚', 2: '車', 3: '包', 4: '馬', 5: '象', 6: '士', 7: '卒' },
+    '-1': { 1: '漢', 2: '車', 3: '包', 4: '馬', 5: '象', 6: '士', 7: '兵' }
+  };
+  var LEVEL_NAME = { 1: '초급', 2: '중급', 3: '전문가' };
+
+  var board, history, turn, gameOver, winner, selected, userMoves, lastAI, checkUser, thinking;
+  var searchId = 0, pending = null, worker = null, justMoved = -1;
+  var level = 2;
+  try { var saved = parseInt(localStorage.getItem('janggi-level'), 10); if (saved >= 1 && saved <= 3) level = saved; } catch (e) {}
+
+  var svg = document.getElementById('board');
+  var layer = document.getElementById('layer');
+  var statusEl = document.getElementById('status');
+  var movesEl = document.getElementById('moves');
+  var overlay = document.getElementById('overlay');
+
+  function X(c) { return M + c * S; }
+  function Y(r) { return M + r * S; }
+
+  // 판 그리기 (한 번만)
+  (function drawGrid() {
+    var g = '';
+    var col = 'var(--line)';
+    g += '<rect x="' + (M - 14) + '" y="' + (M - 14) + '" width="' + (8 * S + 28) + '" height="' + (9 * S + 28) + '" fill="none" stroke="' + col + '" stroke-opacity=".35" stroke-width="1" rx="4"/>';
+    for (var r = 0; r < 10; r++) g += '<line x1="' + X(0) + '" y1="' + Y(r) + '" x2="' + X(8) + '" y2="' + Y(r) + '" stroke="' + col + '" stroke-width="1.2"/>';
+    for (var c = 0; c < 9; c++) g += '<line x1="' + X(c) + '" y1="' + Y(0) + '" x2="' + X(c) + '" y2="' + Y(9) + '" stroke="' + col + '" stroke-width="1.2"/>';
+    g += '<rect x="' + X(0) + '" y="' + Y(0) + '" width="' + 8 * S + '" height="' + 9 * S + '" fill="none" stroke="' + col + '" stroke-width="2.4"/>';
+    [[3, 0, 5, 2], [5, 0, 3, 2], [3, 7, 5, 9], [5, 7, 3, 9]].forEach(function (d) {
+      g += '<line x1="' + X(d[0]) + '" y1="' + Y(d[1]) + '" x2="' + X(d[2]) + '" y2="' + Y(d[3]) + '" stroke="' + col + '" stroke-width="1.2"/>';
+    });
+    document.getElementById('grid').innerHTML = g;
+  })();
+
+  function initialBoard() {
+    var b = new Int8Array(90);
+    var back = [R, E, N, A, 0, A, E, N, R];
+    for (var c = 0; c < 9; c++) { b[c] = -back[c]; b[81 + c] = back[c]; }
+    b[13] = -K; b[76] = K;
+    b[19] = b[25] = -C; b[64] = b[70] = C;
+    [0, 2, 4, 6, 8].forEach(function (c) { b[27 + c] = -P; b[54 + c] = P; });
+    return b;
+  }
+
+  function octagon(x, y, rad) {
+    var pts = [];
+    for (var k = 0; k < 8; k++) {
+      var a = Math.PI / 8 + k * Math.PI / 4;
+      pts.push((x + rad * Math.cos(a)).toFixed(1) + ',' + (y + rad * Math.sin(a)).toFixed(1));
+    }
+    return pts.join(' ');
+  }
+  function radius(t) { return t === K ? 27 : (t === A || t === P) ? 18.5 : 23.5; }
+
+  function render() {
+    var h = '';
+    var lf = lastAI != null ? lastAI >> 7 : -1, lt = lastAI != null ? lastAI & 127 : -1;
+
+    // 상대의 최근 수: 출발점과 경로
+    if (lastAI != null) {
+      h += '<line x1="' + X(lf % 9) + '" y1="' + Y((lf / 9) | 0) + '" x2="' + X(lt % 9) + '" y2="' + Y((lt / 9) | 0) + '" stroke="var(--accent)" stroke-width="3" stroke-opacity=".35" stroke-linecap="round" stroke-dasharray="2 7"/>';
+      h += '<circle cx="' + X(lf % 9) + '" cy="' + Y((lf / 9) | 0) + '" r="11" fill="var(--accent)" fill-opacity=".18" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 3"/>';
+    }
+
+    var targets = {};
+    if (selected != null && userMoves) {
+      userMoves.forEach(function (m) { if ((m >> 7) === selected) targets[m & 127] = true; });
+    }
+
+    for (var i = 0; i < 90; i++) {
+      var p = board[i];
+      if (!p) continue;
+      var t = Math.abs(p), side = p > 0 ? 1 : -1, x = X(i % 9), y = Y((i / 9) | 0), rad = radius(t);
+      var color = side > 0 ? 'var(--cho)' : 'var(--han)';
+      var stroke = color, sw = 2;
+      var isLast = i === lt;
+      var isCheck = checkUser && p === K;
+      if (isLast) h += '<circle cx="' + x + '" cy="' + y + '" r="' + (rad + 7) + '" fill="var(--accent)" fill-opacity=".22" stroke="var(--accent)" stroke-width="2.5"/>';
+      if (i === selected) h += '<circle cx="' + x + '" cy="' + y + '" r="' + (rad + 6) + '" fill="var(--sel)" fill-opacity=".14" stroke="var(--sel)" stroke-width="2.5"/>';
+      if (isCheck) h += '<circle cx="' + x + '" cy="' + y + '" r="' + (rad + 7) + '" fill="var(--check)" fill-opacity=".15" stroke="var(--check)" stroke-width="2.5"/>';
+      if (isLast) { stroke = 'var(--accent)'; sw = 3; }
+      h += '<g class="pc' + (i === justMoved ? ' fresh' : '') + '">';
+      h += '<polygon points="' + octagon(x, y + 1.5, rad) + '" fill="#000" fill-opacity=".12"/>';
+      h += '<polygon points="' + octagon(x, y, rad) + '" fill="var(--piece)" stroke="' + stroke + '" stroke-width="' + sw + '"/>';
+      h += '<polygon points="' + octagon(x, y, rad - 4) + '" fill="none" stroke="' + color + '" stroke-opacity=".35" stroke-width="1"/>';
+      h += '<text x="' + x + '" y="' + (y + 1) + '" font-size="' + (rad * 1.05).toFixed(1) + '" fill="' + color + '">' + CH[side][t] + '</text>';
+      h += '</g>';
+      if (targets[i]) h += '<circle cx="' + x + '" cy="' + y + '" r="' + (rad + 4) + '" fill="none" stroke="var(--sel)" stroke-width="2.5" stroke-dasharray="5 4"/>';
+    }
+    for (var j in targets) {
+      j = +j;
+      if (!board[j]) h += '<circle cx="' + X(j % 9) + '" cy="' + Y((j / 9) | 0) + '" r="8" fill="var(--sel)" fill-opacity=".55"/>';
+    }
+    layer.innerHTML = h;
+    justMoved = -1;
+
+    // 상태
+    if (gameOver) {
+      statusEl.innerHTML = '<strong>Game Over</strong> · ' + winnerLabel();
+    } else if (thinking) {
+      statusEl.innerHTML = '<i class="dot" style="background:var(--han)"></i><span class="thinking">컴퓨터가 생각 중</span>';
+    } else {
+      statusEl.innerHTML = '<i class="dot" style="background:var(--cho)"></i><strong>나의 차례</strong>' + (checkUser ? '<span class="warn">장군!</span>' : '');
+    }
+    movesEl.textContent = LEVEL_NAME[level] + ' · ' + history.length + '수';
+
+    document.querySelectorAll('.seg button').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(+btn.dataset.level === level));
+    });
+    var canUndo = history.some(function (h) { return h.side === 1; });
+    document.getElementById('undoBtn').disabled = !canUndo;
+    document.getElementById('undoBtn2').disabled = !canUndo;
+
+    if (gameOver) {
+      document.getElementById('winnerText').innerHTML = winnerLabel();
+      overlay.hidden = false;
+    } else overlay.hidden = true;
+  }
+
+  function winnerLabel() {
+    if (winner === 1) return '승리 · <strong style="color:var(--cho)">나 (초)</strong>';
+    if (winner === -1) return '승리 · <strong style="color:var(--han)">컴퓨터 (한)</strong>';
+    return '무승부';
+  }
+
+  function applyMove(m, side) {
+    var f = m >> 7, t = m & 127;
+    history.push({ m: m, cap: board[t], side: side });
+    board[t] = board[f]; board[f] = 0;
+    if (side === -1) lastAI = m;
+    justMoved = t;
+    selected = null;
+    turn = -side;
+    afterMove(side);
+  }
+
+  function afterMove(mover) {
+    var opp = -mover;
+    var lm = legalMoves(board, opp);
+    checkUser = false;
+    userMoves = null;
+    if (!lm.length) { endGame(mover); return; }
+    if ((!hasAttackers(board, 1) && !hasAttackers(board, -1)) || history.length >= 400) { endGame(0); return; }
+    if (opp === 1) {
+      userMoves = lm;
+      checkUser = inCheck(board, 1);
+      render();
+    } else {
+      render();
+      requestAI();
+    }
+  }
+
+  function endGame(w) {
+    gameOver = true;
+    winner = w;
+    thinking = false;
+    render();
+  }
+
+  // ---- 컴퓨터 (Web Worker, 실패 시 메인 스레드) ----
+  function makeWorker() {
+    try {
+      var src = document.getElementById('engine').textContent +
+        '\nonmessage=function(e){var d=e.data;postMessage({id:d.id,move:think(d.board,d.side,d.level)});};';
+      var w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      w.onmessage = function (e) {
+        if (pending && e.data.id === pending.id) { var p = pending; pending = null; p.done(e.data.move); }
+      };
+      w.onerror = function (ev) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        worker = null;
+        if (pending) { var p = pending; pending = null; runLocal(p); }
+      };
+      return w;
+    } catch (e) { return null; }
+  }
+  function runLocal(p) {
+    setTimeout(function () { p.done(think(p.board, -1, p.level)); }, 30);
+  }
+
+  function requestAI() {
+    thinking = true;
+    render();
+    var id = ++searchId, started = Date.now();
+    var req = {
+      id: id, board: Array.from(board), side: -1, level: level,
+      done: function (m) {
+        if (id !== searchId) return;
+        var wait = Math.max(0, 400 - (Date.now() - started));
+        setTimeout(function () {
+          if (id !== searchId) return;
+          thinking = false;
+          if (m < 0) { endGame(1); return; }
+          applyMove(m, -1);
+        }, wait);
+      }
+    };
+    if (worker) {
+      pending = req;
+      worker.postMessage({ id: id, board: req.board, side: -1, level: level });
+    } else runLocal(req);
+  }
+
+  function cancelAI() {
+    searchId++;
+    thinking = false;
+    if (pending && worker) { worker.terminate(); worker = makeWorker(); }
+    pending = null;
+  }
+
+  // ---- 조작 ----
+  function newGame() {
+    cancelAI();
+    board = initialBoard();
+    history = [];
+    turn = 1; gameOver = false; winner = null; selected = null; lastAI = null; checkUser = false;
+    userMoves = legalMoves(board, 1);
+    render();
+  }
+
+  function undo() {
+    if (!history.some(function (h) { return h.side === 1; })) return;
+    cancelAI();
+    while (history.length) {
+      var h = history.pop(), f = h.m >> 7, t = h.m & 127;
+      board[f] = board[t]; board[t] = h.cap;
+      if (h.side === 1) break;
+    }
+    lastAI = null;
+    for (var i = history.length - 1; i >= 0; i--) if (history[i].side === -1) { lastAI = history[i].m; break; }
+    turn = 1; gameOver = false; winner = null; selected = null;
+    userMoves = legalMoves(board, 1);
+    checkUser = inCheck(board, 1);
+    render();
+  }
+
+  function pointToIndex(e) {
+    var rect = svg.getBoundingClientRect();
+    var x = (e.clientX - rect.left) / rect.width * 560;
+    var y = (e.clientY - rect.top) / rect.height * 620;
+    var c = Math.round((x - M) / S), r = Math.round((y - M) / S);
+    if (!onB(r, c)) return -1;
+    if (Math.hypot(x - X(c), y - Y(r)) > S * 0.5) return -1;
+    return r * 9 + c;
+  }
+
+  svg.addEventListener('click', function (e) {
+    if (gameOver || thinking || turn !== 1 || !userMoves) return;
+    var idx = pointToIndex(e);
+    if (idx < 0) { selected = null; render(); return; }
+    if (selected != null) {
+      var m = (selected << 7) | idx;
+      if (userMoves.indexOf(m) >= 0) { applyMove(m, 1); return; }
+    }
+    selected = (board[idx] > 0 && selected !== idx) ? idx : null;
+    render();
+  });
+
+  document.querySelectorAll('.seg button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      level = +btn.dataset.level;
+      try { localStorage.setItem('janggi-level', String(level)); } catch (e) {}
+      render();
+    });
+  });
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('undoBtn2').addEventListener('click', undo);
+  document.getElementById('newBtn').addEventListener('click', newGame);
+  document.getElementById('newBtn2').addEventListener('click', newGame);
+
+  worker = makeWorker();
+  newGame();
+})();
+</script>
+</body>
+</html>
