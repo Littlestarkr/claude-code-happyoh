@@ -1,0 +1,1930 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>테트리스</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel2: #1f232c;
+    --ink: #e8eaf0;
+    --muted: #8a90a0;
+    --border: #2a2f3a;
+    --accent: #6ea8ff;
+    --good: #4cd07d;
+    --bad: #ff6b6b;
+    --gold: #ffcc4d;
+    --well: #0a0c10;
+    --grid: #181c24;
+    --cell: 30px;
+    --side-w: 190px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  button, input { font: inherit; color: inherit; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- 게임 화면 ---------- */
+  #app { height: 100%; display: flex; align-items: center; justify-content: center; }
+  #stage { display: flex; gap: 18px; align-items: flex-start; }
+  .side { width: var(--side-w); display: flex; flex-direction: column; gap: 12px; padding-top: calc(var(--cell) * 2); }
+  .box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .label { font-size: 11px; letter-spacing: 0.14em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+  .box canvas { display: block; margin: 0 auto; }
+
+  #hud .stat { padding: 7px 0; border-bottom: 1px solid var(--border); }
+  #hud .stat:first-child { padding-top: 0; }
+  #hud .stat:last-child { border-bottom: 0; padding-bottom: 0; }
+  #hud .k { font-size: 11.5px; color: var(--muted); display: block; }
+  #hud .v { font-size: 18px; font-weight: 700; display: block; line-height: 1.25; }
+  #hud .big .v { font-size: 28px; }
+  #hud .s { font-size: 11.5px; color: var(--muted); display: block; }
+  .good { color: var(--good) !important; }
+  .bad { color: var(--bad) !important; }
+
+  #mode-box .mode-title { font-size: 16px; font-weight: 700; }
+  #mode-box .mode-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .keys-mini { font-size: 11.5px; color: var(--muted); line-height: 1.7; margin-top: 8px; }
+  .keys-mini b { color: var(--ink); font-weight: 600; }
+
+  #board-wrap { position: relative; }
+  #board-wrap canvas { display: block; }
+  #popups {
+    position: absolute; left: 0; right: 0; top: 36%;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    pointer-events: none;
+  }
+  .popup { text-align: center; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.9); animation: pop 1.25s ease-out forwards; }
+  .popup .n { font-size: calc(var(--cell) * 0.78); letter-spacing: 0.03em; display: block; }
+  .popup .c { font-size: calc(var(--cell) * 0.55); color: var(--gold); display: block; }
+  .popup .p { font-size: calc(var(--cell) * 0.5); display: block; }
+  .popup .pc { font-size: calc(var(--cell) * 0.62); color: var(--good); display: block; }
+  @keyframes pop {
+    0% { opacity: 0; transform: scale(0.7); }
+    12% { opacity: 1; transform: scale(1.08); }
+    22% { transform: scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-26px); }
+  }
+  #countdown {
+    position: absolute; left: 0; right: 0; top: calc(var(--cell) * 2); bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(var(--cell) * 3); font-weight: 900; pointer-events: none;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  }
+  #countdown[hidden] { display: none; }
+  .shake { animation: shake 0.14s; }
+  .shake-big { animation: shakeb 0.32s; }
+  @keyframes shake { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(4px); } }
+  @keyframes shakeb {
+    0%, 100% { transform: translate(0, 0); }
+    20% { transform: translate(-5px, 5px); }
+    40% { transform: translate(5px, -3px); }
+    60% { transform: translate(-3px, 3px); }
+    80% { transform: translate(2px, -1px); }
+  }
+
+  /* ---------- 오버레이 화면 ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 10, 14, 0.8);
+    backdrop-filter: blur(4px);
+    padding: 16px;
+  }
+  .overlay[hidden] { display: none; }
+  #scr-pause { background: rgba(10, 12, 16, 0.97); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    padding: 26px 28px; width: min(560px, 100%);
+    max-height: calc(100vh - 32px); overflow: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    user-select: text;
+  }
+  .card.wide { width: min(880px, 100%); }
+  .card h2 { margin: 0 0 16px; font-size: 22px; }
+  .card h3 { margin: 22px 0 10px; font-size: 13px; color: var(--muted); letter-spacing: 0.08em; }
+  .btn {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 16px; cursor: pointer; font-size: 14px;
+  }
+  .btn:hover, .btn:focus-visible { border-color: var(--accent); outline: none; }
+  .btn.primary { background: var(--accent); color: #0b1020; border-color: transparent; font-weight: 700; }
+  .btn.primary:focus-visible { box-shadow: 0 0 0 2px var(--ink); }
+  .btn.danger { color: var(--bad); }
+  .btn.small { padding: 6px 10px; font-size: 13px; }
+  .row-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .row-btns .grow { flex: 1; }
+
+  .logo { font-size: 46px; font-weight: 900; margin: 0; letter-spacing: 0.08em; }
+  .logo span { display: inline-block; }
+  .tagline { color: var(--muted); margin: 4px 0 20px; font-size: 14px; }
+  .modes { display: flex; flex-direction: column; gap: 10px; }
+  .mode-btn {
+    display: grid; grid-template-columns: 30px 1fr auto; align-items: center; column-gap: 10px;
+    text-align: left; width: 100%;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; cursor: pointer;
+  }
+  .mode-btn:hover, .mode-btn:focus-visible { border-color: var(--accent); outline: none; }
+  .mode-btn .key {
+    width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--muted);
+  }
+  .mode-btn .mt { font-size: 17px; font-weight: 700; display: block; }
+  .mode-btn .md { font-size: 12.5px; color: var(--muted); display: block; margin-top: 2px; }
+  .mode-btn .pb { font-size: 13px; color: var(--gold); text-align: right; white-space: nowrap; }
+  .keys-help { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.8; }
+  .keys-help b { color: var(--ink); font-weight: 600; }
+  .notice { margin-top: 12px; font-size: 12.5px; color: var(--bad); }
+  .save-loc { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+  .save-loc b { color: var(--ink); font-weight: 600; }
+  .save-loc .btn.small { padding: 3px 10px; font-size: 12px; margin-left: 6px; }
+
+  .res-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .res-main { font-size: 44px; font-weight: 900; margin: 6px 0 2px; }
+  .res-rank { color: var(--muted); font-size: 14px; }
+  .badge {
+    display: inline-block; background: var(--gold); color: #1a1400; font-weight: 800;
+    border-radius: 999px; padding: 3px 10px; font-size: 13px; margin-left: 8px;
+    animation: glow 1.2s ease-in-out infinite alternate;
+  }
+  @keyframes glow { from { box-shadow: 0 0 0 rgba(255,204,77,0); } to { box-shadow: 0 0 16px rgba(255,204,77,0.7); } }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+  .stat-grid div { background: var(--panel2); border-radius: 8px; padding: 8px 10px; }
+  .stat-grid .k { font-size: 11.5px; color: var(--muted); display: block; }
+  .stat-grid .v { font-size: 17px; font-weight: 700; }
+  .name-row { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .name-row input {
+    flex: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; outline: none;
+  }
+  .name-row input:focus { border-color: var(--accent); }
+
+  .tabs { display: inline-flex; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); padding: 7px 16px; border-radius: 7px; cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); font-weight: 700; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+  .cards div { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
+  .cards .k { font-size: 11.5px; color: var(--muted); display: block; }
+  .cards .v { font-size: 20px; font-weight: 800; }
+  #rec-chart { width: 100%; height: 180px; display: block; background: var(--panel2); border-radius: 10px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th { color: var(--muted); font-weight: 600; text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  .tbl td { padding: 5px 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .tbl td.r, .tbl th.r { text-align: right; }
+  .tbl tr.me td { color: var(--gold); }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+  .totals { color: var(--muted); font-size: 13px; margin-top: 14px; }
+
+  .set-row { display: grid; grid-template-columns: 170px 1fr 56px; gap: 12px; align-items: center; margin: 8px 0; font-size: 14px; }
+  .set-row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .set-row .val { text-align: right; color: var(--muted); }
+  .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 14px; }
+  .toggles label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .toggles input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .keytbl td { padding: 4px 6px; }
+  .keybtn { min-width: 92px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; cursor: pointer; font-size: 13px; }
+  .keybtn:hover { border-color: var(--accent); }
+  .keybtn.wait { border-color: var(--gold); color: var(--gold); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  #scr-test .ok { color: var(--good); }
+  #scr-test .fail { color: var(--bad); }
+  #scr-test li { margin: 4px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <div class="side">
+      <div class="box"><div class="label">HOLD</div><canvas id="cv-hold"></canvas></div>
+      <div class="box" id="hud"></div>
+    </div>
+    <div id="board-wrap">
+      <canvas id="cv-board"></canvas>
+      <div id="popups"></div>
+      <div id="countdown" hidden></div>
+    </div>
+    <div class="side">
+      <div class="box"><div class="label">NEXT</div><canvas id="cv-next"></canvas></div>
+      <div class="box" id="mode-box"></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="scr-title" hidden>
+  <div class="card">
+    <h1 class="logo" id="logo"></h1>
+    <p class="tagline">혼자 즐기는 한 판. 게임이 끝나면 기록이 자동으로 저장됩니다.</p>
+    <div class="modes">
+      <button class="mode-btn" data-mode="marathon"><span class="key">1</span><span><span class="mt">마라톤</span><span class="md">150줄까지, 10줄마다 빨라집니다</span></span><span class="pb" data-pb="marathon"></span></button>
+      <button class="mode-btn" data-mode="sprint"><span class="key">2</span><span><span class="mt">스프린트</span><span class="md">40줄을 최대한 빨리 지우세요</span></span><span class="pb" data-pb="sprint"></span></button>
+      <button class="mode-btn" data-mode="ultra"><span class="key">3</span><span><span class="mt">울트라</span><span class="md">2분 동안 최고 점수에 도전</span></span><span class="pb" data-pb="ultra"></span></button>
+    </div>
+    <div class="row-btns">
+      <button class="btn grow" id="btn-records">기록 보기</button>
+      <button class="btn grow" id="btn-settings">설정</button>
+    </div>
+    <div class="keys-help" id="keys-help"></div>
+    <div class="save-loc" data-folder-status></div>
+  </div>
+</div>
+
+<div class="overlay" id="scr-pause" hidden>
+  <div class="card" style="width:min(360px,100%);text-align:center">
+    <h2>일시정지</h2>
+    <div class="row-btns" style="flex-direction:column">
+      <button class="btn primary" id="btn-resume">계속하기 (Esc)</button>
+      <button class="btn" id="btn-restart">다시 시작 (R)</button>
+      <button class="btn" id="btn-quit">타이틀로</button>
+    </div>
+    <p class="hint">이 판을 그만두면 기록되지 않습니다.</p>
+  </div>
+</div>
+
+<div class="overlay" id="scr-result" hidden><div class="card" id="result-card"></div></div>
+<div class="overlay" id="scr-records" hidden><div class="card wide" id="records-card"></div></div>
+<div class="overlay" id="scr-settings" hidden><div class="card" id="settings-card"></div></div>
+<div class="overlay" id="scr-test" hidden><div class="card" id="test-card"></div></div>
+<input type="file" id="file-import" accept="application/json,.json" hidden>
+
+<!-- ============================================================
+     게임 규칙 엔진: 화면(DOM)을 전혀 모른다. 같은 시드 + 같은 입력 = 같은 결과.
+     ============================================================ -->
+<script id="engine">
+'use strict';
+const COLS = 10, ROWS = 40, HIDDEN = 20;          // 위쪽 20줄은 보이지 않는 버퍼
+const LOCK_DELAY = 500, MAX_RESETS = 15;
+const SPRINT_LINES = 40, MARATHON_LINES = 150, ULTRA_MS = 120000, MAX_LEVEL = 15;
+const TYPES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+const MODES = ['marathon', 'sprint', 'ultra'];
+
+const BASE = {
+  I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+  O: [[1,1],[1,1]],
+  T: [[0,1,0],[1,1,1],[0,0,0]],
+  S: [[0,1,1],[1,1,0],[0,0,0]],
+  Z: [[1,1,0],[0,1,1],[0,0,0]],
+  J: [[1,0,0],[1,1,1],[0,0,0]],
+  L: [[0,0,1],[1,1,1],[0,0,0]],
+};
+// SRS 회전 상태 = 경계 상자 행렬을 시계 방향으로 돌린 것
+const rotCW = m => m.map((row, y) => row.map((_, x) => m[m.length - 1 - x][y]));
+const toCells = m => { const c = []; m.forEach((row, y) => row.forEach((v, x) => { if (v) c.push([x, y]); })); return c; };
+const SHAPES = {};
+for (const t of TYPES) {
+  const states = [BASE[t]];
+  for (let i = 1; i < 4; i++) states.push(rotCW(states[i - 1]));
+  SHAPES[t] = states.map(toCells);
+}
+
+// SRS 벽차기 표 (x 오른쪽 +, y 위쪽 +; 보드 좌표로 쓸 때 y 부호를 뒤집는다)
+const KICK_JLSTZ = {
+  '0>1': [[0,0],[-1,0],[-1, 1],[0,-2],[-1,-2]],
+  '1>0': [[0,0],[ 1,0],[ 1,-1],[0, 2],[ 1, 2]],
+  '1>2': [[0,0],[ 1,0],[ 1,-1],[0, 2],[ 1, 2]],
+  '2>1': [[0,0],[-1,0],[-1, 1],[0,-2],[-1,-2]],
+  '2>3': [[0,0],[ 1,0],[ 1, 1],[0,-2],[ 1,-2]],
+  '3>2': [[0,0],[-1,0],[-1,-1],[0, 2],[-1, 2]],
+  '3>0': [[0,0],[-1,0],[-1,-1],[0, 2],[-1, 2]],
+  '0>3': [[0,0],[ 1,0],[ 1, 1],[0,-2],[ 1,-2]],
+};
+const KICK_I = {
+  '0>1': [[0,0],[-2,0],[ 1,0],[-2,-1],[ 1, 2]],
+  '1>0': [[0,0],[ 2,0],[-1,0],[ 2, 1],[-1,-2]],
+  '1>2': [[0,0],[-1,0],[ 2,0],[-1, 2],[ 2,-1]],
+  '2>1': [[0,0],[ 1,0],[-2,0],[ 1,-2],[-2, 1]],
+  '2>3': [[0,0],[ 2,0],[-1,0],[ 2, 1],[-1,-2]],
+  '3>2': [[0,0],[-2,0],[ 1,0],[-2,-1],[ 1, 2]],
+  '3>0': [[0,0],[ 1,0],[-2,0],[ 1,-2],[-2, 1]],
+  '0>3': [[0,0],[-1,0],[ 2,0],[-1, 2],[ 2,-1]],
+};
+const KICK_180 = [[0,0],[0,1],[1,0],[-1,0],[0,-1]];
+
+const PC_BONUS = [0, 800, 1200, 1800, 2000];
+
+function clearScore(lines, tspin, level, b2b) {
+  let base;
+  if (tspin === 'full') base = [400, 800, 1200, 1600][lines];
+  else if (tspin === 'mini') base = [100, 200, 400][lines];
+  else base = [0, 100, 300, 500, 800][lines];
+  const s = base * level;
+  return b2b ? Math.floor(s * 1.5) : s;
+}
+
+function clearName(lines, tspin) {
+  const w = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'TETRIS'][lines];
+  if (tspin === 'full') return lines ? 'T-SPIN ' + w : 'T-SPIN';
+  if (tspin === 'mini') return lines ? 'MINI T-SPIN ' + w : 'MINI T-SPIN';
+  return w;
+}
+
+function gravityMs(level) {
+  return Math.pow(0.8 - (level - 1) * 0.007, level - 1) * 1000;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+class Game {
+  constructor(mode, seed, opts = {}) {
+    this.mode = mode;
+    this.seed = seed >>> 0;
+    this.rng = mulberry32(this.seed);
+    this.sdf = opts.sdf || 20;
+    this.board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    this.queue = [];
+    this.active = null;
+    this.holdType = null;
+    this.canHold = true;
+    this.level = 1;
+    this.lines = 0;
+    this.score = 0;
+    this.combo = -1;
+    this.b2b = -1;
+    this.elapsed = 0;
+    this.soft = false;
+    this.over = false;
+    this.result = null;
+    this.events = [];
+    this.stats = {
+      pieces: 0, keys: 0, maxCombo: 0, maxB2B: 0, pc: 0,
+      clears: { single: 0, double: 0, triple: 0, tetris: 0, tspin: 0 },
+    };
+    this.gravAcc = 0;
+    this.lockTimer = 0;
+    this.lockResets = 0;
+    this.lowestY = 0;
+    this.lastRotate = false;
+    this.lastKick = 0;
+    this.refill();
+  }
+
+  refill() {
+    while (this.queue.length < 7) {
+      const bag = TYPES.slice();
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(this.rng() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+      this.queue.push(...bag);
+    }
+  }
+  nextType() { const t = this.queue.shift(); this.refill(); return t; }
+
+  start() { this.spawn(this.nextType()); }
+
+  fits(type, rot, x, y) {
+    for (const [cx, cy] of SHAPES[type][rot]) {
+      const bx = x + cx, by = y + cy;
+      if (bx < 0 || bx >= COLS || by < 0 || by >= ROWS) return false;
+      if (this.board[by][bx]) return false;
+    }
+    return true;
+  }
+  cells(p = this.active) { return SHAPES[p.type][p.rot].map(([cx, cy]) => [p.x + cx, p.y + cy]); }
+  onGround() { const p = this.active; return !this.fits(p.type, p.rot, p.x, p.y + 1); }
+  dropDistance() {
+    const p = this.active; let d = 0;
+    while (this.fits(p.type, p.rot, p.x, p.y + d + 1)) d++;
+    return d;
+  }
+  canAct() { return !this.over && !!this.active; }
+  gravity() { return gravityMs(this.level); }
+
+  spawn(type) {
+    const x = type === 'O' ? 4 : 3, y = HIDDEN - 2;
+    this.active = { type, rot: 0, x, y };
+    this.gravAcc = 0; this.lockTimer = 0; this.lockResets = 0;
+    this.lowestY = y; this.lastRotate = false; this.lastKick = 0;
+    if (!this.fits(type, 0, x, y)) { this.finish('topout'); return false; }
+    if (this.fits(type, 0, x, y + 1)) { this.active.y++; this.lowestY = this.active.y; }
+    return true;
+  }
+
+  // 바닥에 닿아 있는 동안의 이동·회전은 락 타이머를 되돌린다 (블록당 최대 15회)
+  afterMove() {
+    if ((this.lockTimer > 0 || this.onGround()) && this.lockResets < MAX_RESETS) {
+      this.lockTimer = 0;
+      this.lockResets++;
+    }
+  }
+  onDescend() {
+    if (this.active.y > this.lowestY) { this.lowestY = this.active.y; this.lockResets = 0; }
+  }
+
+  move(dx) {
+    if (!this.canAct()) return false;
+    const p = this.active;
+    if (!this.fits(p.type, p.rot, p.x + dx, p.y)) return false;
+    p.x += dx;
+    this.lastRotate = false;
+    this.afterMove();
+    this.events.push({ type: 'move' });
+    return true;
+  }
+
+  rotate(dir) {  // 1 시계, -1 반시계, 2 180도
+    if (!this.canAct()) return false;
+    const p = this.active;
+    if (p.type === 'O') return false;
+    const from = p.rot, to = (from + dir + 4) % 4;
+    const kicks = dir === 2 ? KICK_180 : (p.type === 'I' ? KICK_I : KICK_JLSTZ)[from + '>' + to];
+    for (let i = 0; i < kicks.length; i++) {
+      const nx = p.x + kicks[i][0], ny = p.y - kicks[i][1];
+      if (this.fits(p.type, to, nx, ny)) {
+        p.x = nx; p.y = ny; p.rot = to;
+        this.lastRotate = true;
+        this.lastKick = i;
+        this.onDescend();
+        this.afterMove();
+        this.events.push({ type: 'rotate' });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  setSoft(on) { this.soft = on; }
+
+  sonicDrop() {
+    if (!this.canAct()) return 0;
+    const d = this.dropDistance();
+    if (d > 0) { this.active.y += d; this.lastRotate = false; this.onDescend(); }
+    return d;
+  }
+
+  hardDrop() {
+    if (!this.canAct()) return false;
+    const d = this.dropDistance();
+    if (d > 0) { this.active.y += d; this.lastRotate = false; }
+    this.score += d * 2;
+    this.events.push({ type: 'harddrop', dist: d });
+    this.lock(true);
+    return true;
+  }
+
+  hold() {
+    if (!this.canAct() || !this.canHold) return false;
+    const cur = this.active.type;
+    this.canHold = false;
+    const next = this.holdType || this.nextType();
+    this.holdType = cur;
+    this.events.push({ type: 'hold' });
+    this.spawn(next);
+    return true;
+  }
+
+  tick(dt) {
+    if (this.over || !this.active) return;
+    this.elapsed += dt;
+    if (this.mode === 'ultra' && this.elapsed >= ULTRA_MS) {
+      this.elapsed = ULTRA_MS;
+      this.finish('time');
+      return;
+    }
+    const p = this.active;
+    if (this.soft && this.sdf === Infinity) {
+      const d = this.sonicDrop();
+      this.score += d;
+    } else if (!this.onGround()) {
+      const g = this.gravity();
+      const interval = this.soft ? Math.min(g, Math.max(g / this.sdf, 0.5)) : g;
+      this.gravAcc += dt;
+      while (this.gravAcc >= interval) {
+        this.gravAcc -= interval;
+        if (this.fits(p.type, p.rot, p.x, p.y + 1)) {
+          p.y++;
+          this.lastRotate = false;
+          if (this.soft) this.score += 1;
+          this.onDescend();
+        } else { this.gravAcc = 0; break; }
+      }
+    } else {
+      this.gravAcc = 0;
+    }
+    if (this.onGround()) {
+      this.lockTimer += dt;
+      if (this.lockTimer >= LOCK_DELAY) this.lock(false);
+    } else {
+      this.lockTimer = 0;
+    }
+  }
+
+  // T-스핀: 마지막 동작이 회전 + 3x3 상자 네 모서리 중 3곳 이상이 막힘
+  detectTSpin() {
+    const p = this.active;
+    if (p.type !== 'T' || !this.lastRotate) return null;
+    const occ = (x, y) => x < 0 || x >= COLS || y >= ROWS || (y >= 0 && !!this.board[y][x]);
+    const c = [occ(p.x, p.y), occ(p.x + 2, p.y), occ(p.x + 2, p.y + 2), occ(p.x, p.y + 2)]; // 좌상 우상 우하 좌하
+    if (c.filter(Boolean).length < 3) return null;
+    const front = [[0, 1], [1, 2], [2, 3], [3, 0]][p.rot];
+    if (c[front[0]] && c[front[1]]) return 'full';
+    return this.lastKick === 4 ? 'full' : 'mini';
+  }
+
+  lock(hard) {
+    const p = this.active;
+    const tspin = this.detectTSpin();
+    let allHidden = true;
+    for (const [x, y] of this.cells(p)) {
+      this.board[y][x] = p.type;
+      if (y >= HIDDEN) allHidden = false;
+    }
+    this.stats.pieces++;
+
+    const full = [];
+    for (let y = 0; y < ROWS; y++) if (this.board[y].every(Boolean)) full.push(y);
+    for (const y of full) { this.board.splice(y, 1); this.board.unshift(Array(COLS).fill(null)); }
+    const n = full.length, level = this.level;
+
+    let b2bBonus = false;
+    if (n > 0) {
+      if (n === 4 || tspin) { this.b2b++; b2bBonus = this.b2b > 0; }
+      else this.b2b = -1;
+    }
+    let pts = clearScore(n, tspin, level, b2bBonus);
+    if (n > 0) { this.combo++; if (this.combo > 0) pts += 50 * this.combo * level; }
+    else this.combo = -1;
+    const pc = n > 0 && this.board.every(r => r.every(c => !c));
+    if (pc) { pts += (n === 4 && b2bBonus ? 3200 : PC_BONUS[n]) * level; this.stats.pc++; }
+    this.score += pts;
+    this.lines += n;
+
+    const st = this.stats;
+    if (n > 0) {
+      if (tspin) st.clears.tspin++;
+      else st.clears[['', 'single', 'double', 'triple', 'tetris'][n]]++;
+    }
+    st.maxCombo = Math.max(st.maxCombo, this.combo);
+    st.maxB2B = Math.max(st.maxB2B, this.b2b);
+
+    this.events.push({ type: 'lock', hard });
+    if (n > 0 || tspin) {
+      this.events.push({
+        type: 'clear', lines: n, tspin, b2b: b2bBonus, combo: this.combo, pc, pts,
+        rows: full, name: clearName(n, tspin),
+      });
+    }
+    if (this.mode === 'marathon') {
+      const nl = Math.min(MAX_LEVEL, 1 + Math.floor(this.lines / 10));
+      if (nl > this.level) { this.level = nl; this.events.push({ type: 'levelup', level: nl }); }
+    }
+
+    if (allHidden) { this.finish('topout'); return; }
+    if (this.mode === 'sprint' && this.lines >= SPRINT_LINES) { this.finish('clear'); return; }
+    if (this.mode === 'marathon' && this.lines >= MARATHON_LINES) { this.finish('clear'); return; }
+    this.canHold = true;
+    this.spawn(this.nextType());
+  }
+
+  finish(reason) {
+    if (this.over) return;
+    this.over = true;
+    this.result = reason;
+    this.events.push({ type: 'end', reason });
+  }
+}
+
+// ---------- 성적 기록 ----------
+class MemStorage {
+  constructor() { this.m = new Map(); }
+  getItem(k) { return this.m.has(k) ? this.m.get(k) : null; }
+  setItem(k, v) { this.m.set(k, String(v)); }
+  removeItem(k) { this.m.delete(k); }
+}
+
+const RECORDS_KEY = 'tetris.records.v1', KEEP_PER_MODE = 200;
+
+function isValidRecord(r) {
+  return !!r && typeof r === 'object' && typeof r.id === 'string' && MODES.includes(r.mode)
+    && Number.isFinite(r.score) && Number.isFinite(r.timeMs) && Number.isFinite(r.lines)
+    && typeof r.playedAt === 'string';
+}
+const isRanked = r => r.mode === 'sprint' ? !!r.finished : true;
+function compareRecords(mode) {
+  return mode === 'sprint'
+    ? (a, b) => a.timeMs - b.timeMs || a.playedAt.localeCompare(b.playedAt)
+    : (a, b) => b.score - a.score || a.timeMs - b.timeMs || a.playedAt.localeCompare(b.playedAt);
+}
+
+class RecordStore {
+  constructor(storage) { this.s = storage; }
+  load() {
+    let raw = null;
+    try {
+      raw = this.s.getItem(RECORDS_KEY);
+      if (!raw) return [];
+      const d = JSON.parse(raw);
+      const arr = Array.isArray(d) ? d : (d && Array.isArray(d.records) ? d.records : null);
+      if (!arr) throw new Error('형식 오류');
+      return arr.filter(isValidRecord);
+    } catch (e) {
+      try { if (raw) this.s.setItem(RECORDS_KEY + '.corrupt', raw); this.s.removeItem(RECORDS_KEY); } catch (_) {}
+      return [];
+    }
+  }
+  write(list) {
+    try { this.s.setItem(RECORDS_KEY, JSON.stringify({ version: 1, records: list })); }
+    catch (e) { return false; }
+    if (this.onChange) this.onChange();
+    return true;
+  }
+  // 모드별 최근 200건만 남기되, 개인 최고 기록은 지우지 않는다
+  trim(list) {
+    const out = [];
+    for (const mode of MODES) {
+      const m = list.filter(r => r.mode === mode).sort((a, b) => b.playedAt.localeCompare(a.playedAt));
+      const keep = m.slice(0, KEEP_PER_MODE);
+      const best = this.ranked(mode, m)[0];
+      if (best && !keep.includes(best)) keep.push(best);
+      out.push(...keep);
+    }
+    return out;
+  }
+  add(rec) { return this.write(this.trim([...this.load(), rec])); }
+  update(id, patch) {
+    const list = this.load();
+    const r = list.find(x => x.id === id);
+    if (!r) return false;
+    Object.assign(r, patch);
+    return this.write(list);
+  }
+  merge(recs) {
+    const list = this.load();
+    const ids = new Set(list.map(r => r.id));
+    const fresh = recs.filter(r => isValidRecord(r) && !ids.has(r.id));
+    this.write(this.trim([...list, ...fresh]));
+    return fresh.length;
+  }
+  clear() {
+    try { this.s.removeItem(RECORDS_KEY); } catch (e) {}
+    if (this.onChange) this.onChange();
+  }
+  ranked(mode, list = this.load()) {
+    return list.filter(r => r.mode === mode && isRanked(r)).sort(compareRecords(mode));
+  }
+  best(mode, list) { return this.ranked(mode, list)[0] || null; }
+}
+
+// ---------- 자체 테스트 (주소 뒤에 ?test) ----------
+function runSelfTests() {
+  const results = [];
+  const test = (name, fn) => {
+    try { fn(); results.push({ name, ok: true }); }
+    catch (e) { results.push({ name, ok: false, err: String(e && e.message || e) }); }
+  };
+  const STEP_MS = 1000 / 60;
+  const eq = (a, b, msg) => { if (a !== b) throw new Error(`${msg ? msg + ': ' : ''}기대 ${b}, 실제 ${a}`); };
+  const fillRow = (g, y, holes) => { for (let x = 0; x < COLS; x++) g.board[y][x] = holes.includes(x) ? null : 'Z'; };
+
+  test('SRS 회전: 7종 모두 4방향, 각 4칸', () => {
+    for (const t of TYPES) { eq(SHAPES[t].length, 4, t); SHAPES[t].forEach(s => eq(s.length, 4, t)); }
+    eq(new Set(SHAPES.T.map(s => JSON.stringify(s))).size, 4, 'T 방향 수');
+  });
+  test('SRS 벽차기 표: 역방향 회전은 오프셋 부호가 반대', () => {
+    for (const tbl of [KICK_JLSTZ, KICK_I]) {
+      for (const k of Object.keys(tbl)) {
+        const [a, b] = k.split('>');
+        const inv = tbl[b + '>' + a];
+        eq(tbl[k].length, 5, k);
+        tbl[k].forEach(([x, y], i) => { eq(x, -inv[i][0], k); eq(y, -inv[i][1], k); });
+      }
+    }
+  });
+  test('7-bag: 7개마다 7종이 한 번씩, 7000개 중 종류별 1000개', () => {
+    const g = new Game('marathon', 123);
+    const seq = [];
+    for (let i = 0; i < 7000; i++) seq.push(g.nextType());
+    for (let i = 0; i < 7000; i += 7) eq(new Set(seq.slice(i, i + 7)).size, 7, `bag ${i / 7}`);
+    for (const t of TYPES) eq(seq.filter(x => x === t).length, 1000, t);
+  });
+  test('같은 시드는 같은 블록 순서', () => {
+    const a = new Game('sprint', 42), b = new Game('sprint', 42);
+    for (let i = 0; i < 50; i++) eq(a.nextType(), b.nextType(), `#${i}`);
+  });
+  test('점수표 (레벨 × 기본점, B2B 1.5배)', () => {
+    eq(clearScore(1, null, 3, false), 300);
+    eq(clearScore(4, null, 1, false), 800);
+    eq(clearScore(4, null, 1, true), 1200);
+    eq(clearScore(2, 'full', 1, false), 1200);
+    eq(clearScore(3, 'full', 2, true), 4800);
+    eq(clearScore(0, 'mini', 1, false), 100);
+  });
+  test('T-스핀 더블: 회전으로 들어간 T를 판정하고 1200점', () => {
+    const g = new Game('marathon', 1);
+    g.start();
+    fillRow(g, 39, [4]); fillRow(g, 38, [3, 4, 5]);
+    g.board[37][3] = 'Z';
+    g.active = { type: 'T', rot: 1, x: 3, y: 37 };
+    eq(g.fits('T', 1, 3, 37), true, '시작 위치');
+    eq(g.rotate(1), true, '회전');
+    eq(g.active.rot, 2); eq(g.active.x, 3);
+    g.hardDrop();
+    const ev = g.events.find(e => e.type === 'clear');
+    eq(ev && ev.name, 'T-SPIN DOUBLE');
+    eq(g.score, 1200);
+    eq(g.board[39][3], 'Z', '돌출부가 한 줄 내려옴');
+  });
+  test('테트리스 연속 → 백투백 1.5배 + 콤보', () => {
+    const g = new Game('marathon', 5);
+    g.start();
+    for (let y = 32; y < 40; y++) fillRow(g, y, [0]);
+    g.board[31][5] = 'Z';                     // 퍼펙트 클리어 방지
+    g.active = { type: 'I', rot: 1, x: -2, y: 26 };
+    g.hardDrop();
+    g.active = { type: 'I', rot: 1, x: -2, y: 26 };
+    g.hardDrop();
+    const cl = g.events.filter(e => e.type === 'clear');
+    eq(cl.length, 2);
+    eq(cl[0].pts, 800, '첫 테트리스');
+    eq(cl[1].b2b, true, 'B2B');
+    eq(cl[1].pts, 1200 + 50, '두 번째 (B2B + 1콤보)');
+    eq(g.lines, 8);
+  });
+  test('락 딜레이: 가만히 두면 0.5초 뒤 고정', () => {
+    const g = new Game('marathon', 3);
+    g.start(); g.sonicDrop();
+    g.tick(300); eq(g.stats.pieces, 0, '0.3초');
+    g.tick(250); eq(g.stats.pieces, 1, '0.55초');
+  });
+  test('락 딜레이: 바닥에서 움직이면 15회까지만 연장', () => {
+    const g = new Game('marathon', 7);
+    g.start(); g.sonicDrop();
+    for (let i = 0; i < 15; i++) { if (!g.move(i % 2 ? 1 : -1)) throw new Error('이동 실패'); g.tick(400); }
+    eq(g.stats.pieces, 0, '15회 이동 동안은 유지');
+    g.move(1); g.tick(400);
+    g.move(-1); g.tick(400);
+    eq(g.stats.pieces, 1, '한도 초과 후 고정');
+  });
+  test('스프린트: 40줄에 도달하면 완주', () => {
+    const g = new Game('sprint', 9);
+    g.start();
+    g.lines = 36;
+    for (let y = 36; y < 40; y++) fillRow(g, y, [0]);
+    g.active = { type: 'I', rot: 1, x: -2, y: 26 };
+    g.hardDrop();
+    eq(g.over, true); eq(g.result, 'clear'); eq(g.lines, 40);
+  });
+  test('울트라: 2분이 지나면 종료', () => {
+    const g = new Game('ultra', 11);
+    g.start();
+    g.tick(1000);
+    eq(g.over, false, '1초 경과');
+    g.elapsed = ULTRA_MS - 10;
+    g.tick(STEP_MS);
+    eq(g.result, 'time'); eq(g.elapsed, ULTRA_MS);
+  });
+  test('마라톤: 10줄마다 레벨 업', () => {
+    const g = new Game('marathon', 13);
+    g.start();
+    for (let k = 0; k < 3; k++) {
+      for (let y = 36; y < 40; y++) fillRow(g, y, [0]);
+      g.board[35][5] = 'Z';
+      g.active = { type: 'I', rot: 1, x: -2, y: 26 };
+      g.hardDrop();
+      for (let y = 0; y < ROWS; y++) g.board[y].fill(null);
+    }
+    eq(g.lines, 12); eq(g.level, 2);
+  });
+
+  const rec = (mode, i, extra) => Object.assign({
+    id: mode + i, mode, playedAt: new Date(Date.UTC(2026, 0, 1) + i * 60000).toISOString(),
+    finished: true, score: 1000 + i, lines: 40, timeMs: 90000 - i, level: 1,
+  }, extra);
+  test('기록: 스프린트 순위는 완주한 판만, 시간 짧은 순', () => {
+    const s = new RecordStore(new MemStorage());
+    s.add(rec('sprint', 1, { timeMs: 80000 }));
+    s.add(rec('sprint', 2, { timeMs: 60000, finished: false }));
+    s.add(rec('sprint', 3, { timeMs: 70000 }));
+    const r = s.ranked('sprint');
+    eq(r.length, 2); eq(r[0].id, 'sprint3');
+    eq(s.load().length, 3, '미완주도 저장은 됨');
+  });
+  test('기록: 모드별 200건 초과 시 오래된 것부터 삭제, 최고 기록은 유지', () => {
+    const s = new RecordStore(new MemStorage());
+    const list = [rec('marathon', 0, { score: 999999 })];
+    for (let i = 1; i <= 250; i++) list.push(rec('marathon', i));
+    s.write(s.trim(list));
+    const kept = s.load();
+    eq(kept.length, 201);
+    eq(s.best('marathon').id, 'marathon0');
+    eq(kept.some(r => r.id === 'marathon1'), false, '오래된 기록 삭제');
+  });
+  test('기록: 깨진 데이터는 백업하고 빈 목록으로 복구', () => {
+    const m = new MemStorage();
+    m.setItem(RECORDS_KEY, '{망가진');
+    const s = new RecordStore(m);
+    eq(s.load().length, 0);
+    eq(m.getItem(RECORDS_KEY + '.corrupt'), '{망가진');
+    s.add(rec('ultra', 1));
+    eq(s.load().length, 1);
+  });
+  test('기록: 가져오기는 같은 id를 중복 추가하지 않음', () => {
+    const s = new RecordStore(new MemStorage());
+    s.add(rec('ultra', 1));
+    eq(s.merge([rec('ultra', 1), rec('ultra', 2), { bad: true }]), 1);
+    eq(s.load().length, 2);
+  });
+  test('기록: 저장·삭제할 때마다 폴더 동기화 신호를 보냄', () => {
+    const s = new RecordStore(new MemStorage());
+    let n = 0;
+    s.onChange = () => n++;
+    s.add(rec('sprint', 1));
+    s.update('sprint1', { name: '해피' });
+    s.clear();
+    eq(n, 3);
+  });
+  return results;
+}
+if (typeof module !== 'undefined') module.exports = { runSelfTests, Game, RecordStore, MemStorage };
+</script>
+
+<!-- ============================================================
+     화면, 입력, 소리, 기록 화면
+     ============================================================ -->
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const STEP = 1000 / 60;
+const MODE_NAMES = { marathon: '마라톤', sprint: '스프린트', ultra: '울트라' };
+const MODE_DESC = { marathon: '150줄 · 10줄마다 레벨 업', sprint: '40줄을 최대한 빨리', ultra: '2분 동안 최고 점수' };
+const COLORS = { I: '#31c7ef', O: '#f7d308', T: '#b050d8', S: '#42b642', Z: '#ef2029', J: '#3f6fe8', L: '#ef7921' };
+const ACTIONS = [
+  ['left', '왼쪽 이동'], ['right', '오른쪽 이동'], ['soft', '소프트 드롭'], ['hard', '하드 드롭'],
+  ['cw', '시계 방향 회전'], ['ccw', '반시계 방향 회전'], ['r180', '180도 회전'], ['hold', '홀드'],
+  ['pause', '일시정지'], ['restart', '재시작'],
+];
+const DEFAULT_KEYS = {
+  left: ['ArrowLeft', ''], right: ['ArrowRight', ''], soft: ['ArrowDown', ''], hard: ['Space', ''],
+  cw: ['ArrowUp', 'KeyX'], ccw: ['KeyZ', 'ControlLeft'], r180: ['KeyA', ''], hold: ['KeyC', 'ShiftLeft'],
+  pause: ['Escape', 'KeyP'], restart: ['KeyR', ''],
+};
+const DEFAULT_SETTINGS = {
+  das: 133, arr: 10, sdf: 20, ghost: true, grid: true, shake: true, sound: true, volume: 0.6, lastName: '',
+};
+const SETTINGS_KEY = 'tetris.settings.v1';
+
+// ---------- 유틸 ----------
+const fmtNum = n => Math.round(n).toLocaleString('ko-KR');
+function fmtTime(ms) {
+  const cs = Math.floor(Math.max(0, ms) / 10);
+  const m = Math.floor(cs / 6000), s = Math.floor(cs / 100) % 60, c = cs % 100;
+  return `${m}:${String(s).padStart(2, '0')}.${String(c).padStart(2, '0')}`;
+}
+function fmtDate(iso) {
+  const d = new Date(iso);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtDuration(ms) {
+  const m = Math.floor(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분 ${Math.floor(ms / 1000) % 60}초`;
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function keyLabel(code) {
+  if (!code) return '—';
+  const map = {
+    ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Space: 'Space', Escape: 'Esc',
+    ShiftLeft: 'L-Shift', ShiftRight: 'R-Shift', ControlLeft: 'L-Ctrl', ControlRight: 'R-Ctrl',
+    AltLeft: 'L-Alt', AltRight: 'R-Alt', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace',
+  };
+  if (map[code]) return map[code];
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return 'Num ' + code.slice(6);
+  return code;
+}
+const pbText = (mode, r) => !r ? '' : mode === 'sprint' ? fmtTime(r.timeMs) : fmtNum(r.score) + '점';
+
+// ---------- 저장소와 설정 ----------
+function openStorage() {
+  try { const k = '__tetris_test'; localStorage.setItem(k, '1'); localStorage.removeItem(k); return localStorage; }
+  catch (e) { return null; }
+}
+const STORAGE = openStorage();
+const store = new RecordStore(STORAGE || new MemStorage());
+
+// ---------- 폴더 저장: 사용자가 고른 폴더의 tetris-records.json ----------
+// 브라우저는 보안상 임의 경로에 쓸 수 없으므로, 처음 한 번 폴더를 골라 쓰기 권한을 받는다.
+// 폴더 핸들은 IndexedDB에 보관해 다음 실행 때 다시 쓴다. localStorage 는 캐시 겸 백업으로 유지한다.
+const RECORDS_FILE = 'tetris-records.json';
+const idb = {
+  open() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('tetris', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async get(k) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const q = db.transaction('kv').objectStore('kv').get(k);
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  },
+  async set(k, v) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(v, k);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+};
+
+const Folder = {
+  supported: typeof window.showDirectoryPicker === 'function',
+  handle: null,
+  state: 'off',          // off | prompt | on | error | unsupported
+  error: '',
+  dirty: false,
+  pending: null,
+
+  async init() {
+    if (!this.supported) { this.state = 'unsupported'; return; }
+    try {
+      const h = await idb.get('recordsDir');
+      if (!h) return;
+      this.handle = h;
+      const p = await h.queryPermission({ mode: 'readwrite' });
+      if (p === 'granted') await this.sync();
+      else this.state = 'prompt';
+    } catch (e) { this.state = 'off'; }
+  },
+
+  async connect() {
+    try {
+      const h = await window.showDirectoryPicker({ id: 'tetris-records', mode: 'readwrite' });
+      this.handle = h;
+      await idb.set('recordsDir', h);
+      await this.sync();
+    } catch (e) {
+      if (e.name !== 'AbortError') this.fail(e);
+    }
+  },
+
+  async reconnect() {
+    if (!this.handle) return this.connect();
+    try {
+      if (await this.handle.requestPermission({ mode: 'readwrite' }) === 'granted') await this.sync();
+    } catch (e) { this.fail(e); }
+  },
+
+  // 폴더 파일과 브라우저 기록을 합친 뒤 파일에 다시 쓴다
+  async sync() {
+    try {
+      const fh = await this.handle.getFileHandle(RECORDS_FILE, { create: true });
+      const text = await (await fh.getFile()).text();
+      if (text.trim()) {
+        let arr = null;
+        try { const d = JSON.parse(text); arr = Array.isArray(d) ? d : d && d.records; } catch (e) {}
+        if (Array.isArray(arr)) store.merge(arr);
+        else await this.writeFile(`tetris-records.corrupt-${Date.now()}.json`, text);
+      }
+      this.state = 'on';
+      this.error = '';
+      await this.write();
+    } catch (e) { this.fail(e); }
+  },
+
+  async writeFile(name, text) {
+    const fh = await this.handle.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(text);
+    await w.close();
+  },
+
+  async write() {
+    if (this.state !== 'on') return false;
+    try {
+      await this.writeFile(RECORDS_FILE, JSON.stringify({ version: 1, savedAt: new Date().toISOString(), records: store.load() }, null, 1));
+      return true;
+    } catch (e) { this.fail(e); return false; }
+  },
+
+  // 쓰기 요청을 모아 한 번에 하나씩 파일에 쓴다 (쓰는 도중 또 바뀌면 끝난 뒤 한 번 더)
+  schedule() {
+    if (this.state !== 'on') return;
+    this.dirty = true;
+    if (this.pending) return;
+    this.pending = (async () => {
+      while (this.dirty) {
+        this.dirty = false;
+        await Promise.resolve();
+        await this.write();
+      }
+      this.pending = null;
+      App.refreshFolderUI();
+    })();
+  },
+
+  fail(e) {
+    this.state = 'error';
+    this.error = (e && (e.message || e.name)) || '알 수 없는 오류';
+  },
+
+  // 화면에 보여 줄 저장 위치 안내 + 버튼
+  statusHTML() {
+    const name = this.handle ? esc(this.handle.name) : '';
+    switch (this.state) {
+      case 'on':
+        return `기록 저장 위치 · <b>${name}/${RECORDS_FILE}</b> <button class="btn small" data-folder="connect">폴더 변경</button>`;
+      case 'prompt':
+        return `<b>${name}</b> 폴더에 계속 저장하려면 권한을 허용해 주세요. <button class="btn small primary" data-folder="reconnect">권한 허용</button>`;
+      case 'error':
+        return `<span class="bad">폴더에 저장하지 못했습니다 (${esc(this.error)}).</span> 기록은 브라우저에 남아 있습니다. <button class="btn small" data-folder="reconnect">다시 연결</button>`;
+      case 'unsupported':
+        return `이 브라우저는 폴더 저장을 지원하지 않아 기록이 브라우저에만 남습니다. Chrome이나 Edge로 열면 이 폴더에 저장됩니다.`;
+      default:
+        return `저장 폴더가 아직 없어 기록이 브라우저에만 남습니다. <button class="btn small primary" data-folder="connect">저장 폴더 선택</button><br><span class="hint">Tetris.html 이 들어 있는 폴더를 고르면 그 안에 ${RECORDS_FILE} 이 만들어집니다.</span>`;
+    }
+  },
+};
+store.onChange = () => Folder.schedule();
+
+function loadSettings() {
+  let s = {};
+  try { s = JSON.parse((STORAGE && STORAGE.getItem(SETTINGS_KEY)) || '{}') || {}; } catch (e) { s = {}; }
+  const out = { ...DEFAULT_SETTINGS };
+  for (const k of Object.keys(DEFAULT_SETTINGS)) if (typeof s[k] === typeof DEFAULT_SETTINGS[k]) out[k] = s[k];
+  out.keys = {};
+  for (const [a] of ACTIONS) {
+    const v = s.keys && s.keys[a];
+    out.keys[a] = Array.isArray(v) && v.length === 2 && v.every(x => typeof x === 'string') ? v.slice() : DEFAULT_KEYS[a].slice();
+  }
+  return out;
+}
+const settings = loadSettings();
+function saveSettings() {
+  try { STORAGE && STORAGE.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+const sdfValue = () => settings.sdf >= 41 ? Infinity : settings.sdf;
+
+// ---------- 효과음 (Web Audio 합성) ----------
+class Sfx {
+  constructor() { this.ctx = null; this.master = null; }
+  ensure() {
+    if (!settings.sound) return null;
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.connect(this.ctx.destination);
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.master.gain.value = settings.volume * 0.6;
+    return this.ctx;
+  }
+  tone(freq, dur, { type = 'square', vol = 0.15, delay = 0, slide = 0 } = {}) {
+    const c = this.ensure();
+    if (!c) return;
+    const t = c.currentTime + delay;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * slide), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t); o.stop(t + dur + 0.03);
+  }
+  seq(notes, step, opts) { notes.forEach((f, i) => this.tone(f, step * 1.6, { ...opts, delay: i * step })); }
+  play(name, arg) {
+    switch (name) {
+      case 'move': this.tone(300, 0.03, { vol: 0.03 }); break;
+      case 'rotate': this.tone(640, 0.045, { type: 'triangle', vol: 0.09 }); break;
+      case 'hold': this.tone(392, 0.09, { type: 'sine', vol: 0.12, slide: 1.5 }); break;
+      case 'lock': this.tone(170, 0.07, { type: 'triangle', vol: 0.14 }); break;
+      case 'hard':
+        this.tone(130, 0.14, { type: 'sine', vol: 0.35, slide: 0.4 });
+        this.tone(70, 0.08, { type: 'square', vol: 0.04 });
+        break;
+      case 'clear': this.seq([523.25, 659.25, 783.99, 1046.5].slice(0, arg), 0.05, { type: 'triangle', vol: 0.13 }); break;
+      case 'tetris':
+        this.seq([523.25, 659.25, 783.99, 1046.5, 1318.5], 0.055, { type: 'square', vol: 0.07 });
+        this.seq([261.6, 329.6, 392, 523.25], 0.07, { type: 'triangle', vol: 0.12 });
+        break;
+      case 'tspin': this.tone(280, 0.3, { type: 'sawtooth', vol: 0.06, slide: 3.2 }); break;
+      case 'combo': this.tone(440 * Math.pow(2, Math.min(arg, 14) / 12), 0.08, { type: 'square', vol: 0.06, delay: 0.12 }); break;
+      case 'pc': this.seq([523, 659, 784, 1047, 1319, 1568, 2093], 0.05, { type: 'triangle', vol: 0.12 }); break;
+      case 'level': this.seq([659.25, 783.99, 987.77, 1318.5], 0.07, { type: 'square', vol: 0.07 }); break;
+      case 'count': this.tone(440, 0.12, { vol: 0.08 }); break;
+      case 'go': this.tone(880, 0.3, { vol: 0.08 }); break;
+      case 'over': this.seq([392, 329.6, 261.6, 196], 0.13, { type: 'triangle', vol: 0.15 }); break;
+      case 'finish': this.seq([523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5], 0.08, { type: 'square', vol: 0.07 }); break;
+      case 'record': this.seq([783.99, 987.77, 1174.7, 1568], 0.09, { type: 'triangle', vol: 0.14 }); break;
+    }
+  }
+}
+const sfx = new Sfx();
+
+// ---------- 입력: DAS / ARR ----------
+class Controller {
+  constructor(game) {
+    this.game = game;
+    this.held = { left: false, right: false };
+    this.dir = 0; this.das = 0; this.arr = 0;
+  }
+  press(action) {
+    const g = this.game;
+    switch (action) {
+      case 'left': case 'right':
+        this.held[action] = true;
+        this.dir = action === 'left' ? -1 : 1;
+        this.das = 0; this.arr = 0;
+        g.move(this.dir);
+        break;
+      case 'soft': g.setSoft(true); break;
+      case 'hard': g.hardDrop(); break;
+      case 'cw': g.rotate(1); break;
+      case 'ccw': g.rotate(-1); break;
+      case 'r180': g.rotate(2); break;
+      case 'hold': g.hold(); break;
+    }
+  }
+  release(action) {
+    if (action === 'left' || action === 'right') {
+      this.held[action] = false;
+      const d = action === 'left' ? -1 : 1;
+      if (this.dir === d) {
+        this.dir = this.held.left ? -1 : this.held.right ? 1 : 0;
+        this.das = 0; this.arr = 0;
+      }
+    } else if (action === 'soft') {
+      this.game.setSoft(false);
+    }
+  }
+  releaseAll() {
+    this.held.left = this.held.right = false;
+    this.dir = 0;
+    this.game.setSoft(false);
+  }
+  update(dt) {
+    if (!this.dir) return;
+    const DAS = settings.das, ARR = settings.arr, g = this.game;
+    if (this.das < DAS) {
+      this.das += dt;
+      if (this.das < DAS) return;
+      this.arr = ARR + (this.das - DAS);
+    } else {
+      this.arr += dt;
+    }
+    if (ARR === 0) { while (g.move(this.dir)); return; }
+    while (this.arr >= ARR) {
+      this.arr -= ARR;
+      if (!g.move(this.dir)) { this.arr = 0; break; }
+    }
+  }
+}
+
+// ---------- 그리기 ----------
+function setupCanvas(cv, w, h) {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  cv.style.width = w + 'px'; cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+function drawBlock(ctx, px, py, s, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(px, py, s, s);
+  const e = Math.max(2, s * 0.15);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.fillRect(px, py, s, e); ctx.fillRect(px, py, e, s);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(px, py + s - e, s, e); ctx.fillRect(px + s - e, py, e, s);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(px + 0.5, py + 0.5, s - 1, s - 1);
+}
+function drawMini(ctx, type, cx, cy, s, gray) {
+  const cells = SHAPES[type][0];
+  const xs = cells.map(c => c[0]), ys = cells.map(c => c[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const ox = cx - (maxX - minX + 1) * s / 2, oy = cy - (maxY - minY + 1) * s / 2;
+  for (const [x, y] of cells) drawBlock(ctx, ox + (x - minX) * s, oy + (y - minY) * s, s, gray ? '#4a4f5a' : COLORS[type]);
+}
+
+// ---------- 앱 ----------
+const HUD_LAYOUT = {
+  marathon: [['score', '점수', true], ['level', '레벨'], ['lines', '줄'], ['time', '시간'], ['pps', 'PPS · 초당 블록'], ['kpp', 'KPP · 블록당 키'], ['combo', '콤보 / B2B'], ['pb', '최고 기록 대비']],
+  sprint: [['time', '시간', true], ['remain', '남은 줄', true], ['pps', 'PPS · 초당 블록'], ['kpp', 'KPP · 블록당 키'], ['combo', '콤보 / B2B'], ['score', '점수'], ['pb', '최고 기록 페이스 대비']],
+  ultra: [['timeleft', '남은 시간', true], ['score', '점수', true], ['lines', '줄'], ['pps', 'PPS · 초당 블록'], ['kpp', 'KPP · 블록당 키'], ['combo', '콤보 / B2B'], ['pb', '최고 기록 페이스 대비']],
+};
+
+const App = {
+  screen: 'title',
+  game: null, controller: null, mode: 'marathon', pb: null,
+  cell: 30, mini: 22, flashes: [], last: 0, acc: 0, cd: 0, cdShown: 0,
+  keymap: {}, capture: null, recTab: 'marathon', lastRecord: null, saveOk: true,
+
+  init() {
+    this.cvBoard = $('#cv-board'); this.cvHold = $('#cv-hold'); this.cvNext = $('#cv-next');
+    this.buildKeymap();
+    this.layout();
+    this.renderLogo();
+    addEventListener('resize', () => this.layout());
+    addEventListener('keydown', e => this.onKeyDown(e));
+    addEventListener('keyup', e => this.onKeyUp(e));
+    addEventListener('blur', () => { if (this.screen === 'game') this.pause(); else if (this.controller) this.controller.releaseAll(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden && this.screen === 'game') this.pause(); });
+    document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', () => this.startGame(b.dataset.mode)));
+    $('#btn-records').onclick = () => this.openRecords();
+    $('#btn-settings').onclick = () => this.openSettings();
+    $('#btn-resume').onclick = () => this.resume();
+    $('#btn-restart').onclick = () => this.startGame(this.mode);
+    $('#btn-quit').onclick = () => this.toTitle();
+    $('#file-import').onchange = e => this.importFile(e.target.files[0]);
+    document.addEventListener('click', async e => {
+      const b = e.target.closest('[data-folder]');
+      if (!b) return;
+      await (b.dataset.folder === 'connect' ? Folder.connect() : Folder.reconnect());
+      this.refreshFolderUI(true);
+    });
+    Folder.init().then(() => this.refreshFolderUI(true));
+    if (new URLSearchParams(location.search).has('test')) this.showTests();
+    else this.toTitle();
+    requestAnimationFrame(t => { this.last = t; this.frame(t); });
+  },
+
+  buildKeymap() {
+    this.keymap = {};
+    for (const [a] of ACTIONS) for (const c of settings.keys[a]) if (c) this.keymap[c] = a;
+  },
+
+  layout() {
+    const W = innerWidth, H = innerHeight, side = 190, gap = 18;
+    let cell = Math.floor(Math.min((H - 40) / 22, (W - 2 * side - 2 * gap - 32) / 10));
+    cell = Math.max(14, Math.min(40, cell));
+    this.cell = cell;
+    this.mini = Math.max(10, Math.round(cell * 0.7));
+    const root = document.documentElement.style;
+    root.setProperty('--cell', cell + 'px');
+    root.setProperty('--side-w', Math.max(side, this.mini * 5 + 26) + 'px');
+    this.ctxBoard = setupCanvas(this.cvBoard, cell * COLS, cell * 22);
+    this.ctxHold = setupCanvas(this.cvHold, this.mini * 5, this.mini * 3);
+    this.ctxNext = setupCanvas(this.cvNext, this.mini * 5, this.mini * 3 * 5);
+    this.render();
+  },
+
+  renderLogo() {
+    const letters = '테트리스'.split(''), cols = [COLORS.Z, COLORS.L, COLORS.O, COLORS.S];
+    $('#logo').innerHTML = letters.map((l, i) => `<span style="color:${cols[i]}">${l}</span>`).join('');
+  },
+
+  show(id) {
+    for (const el of document.querySelectorAll('.overlay')) el.hidden = el.id !== id;
+  },
+
+  // ----- 화면 전환 -----
+  toTitle() {
+    this.screen = 'title';
+    this.game = null; this.controller = null;
+    $('#countdown').hidden = true;
+    $('#popups').innerHTML = '';
+    this.updateTitlePB();
+    this.refreshFolderUI();
+    const k = a => `<b>${settings.keys[a].filter(Boolean).map(keyLabel).join(' / ')}</b>`;
+    $('#keys-help').innerHTML =
+      `${k('left')} ${k('right')} 이동 · ${k('soft')} 소프트 드롭 · ${k('hard')} 하드 드롭<br>` +
+      `${k('cw')} 회전 · ${k('ccw')} 반대 회전 · ${k('r180')} 180° · ${k('hold')} 홀드<br>` +
+      `${k('pause')} 일시정지 · ${k('restart')} 재시작 · 숫자 <b>1 2 3</b> 으로 바로 시작`;
+    this.renderSideInfo();
+    this.buildHud();
+    this.show('scr-title');
+    const first = document.querySelector('.mode-btn');
+    if (first) first.focus();
+  },
+
+  updateTitlePB() {
+    for (const m of MODES) {
+      const b = store.best(m);
+      document.querySelector(`[data-pb="${m}"]`).textContent = b ? '최고 ' + pbText(m, b) : '';
+    }
+  },
+
+  // 폴더 연결 상태가 바뀌면 안내 문구를 갱신하고, 폴더에서 합쳐진 기록을 화면에 반영한다
+  refreshFolderUI(reloaded) {
+    document.querySelectorAll('[data-folder-status]').forEach(el => { el.innerHTML = Folder.statusHTML(); });
+    if (!reloaded) return;
+    if (this.screen === 'title') this.updateTitlePB();
+    if (this.screen === 'records') this.renderRecords();
+  },
+
+  startGame(mode) {
+    sfx.ensure();
+    this.mode = mode;
+    const seed = (Math.random() * 4294967296) >>> 0;
+    this.game = new Game(mode, seed, { sdf: sdfValue() });
+    this.controller = new Controller(this.game);
+    this.pb = store.best(mode);
+    this.flashes = [];
+    $('#popups').innerHTML = '';
+    this.renderSideInfo();
+    this.buildHud();
+    this.show(null);
+    if (document.activeElement) document.activeElement.blur();
+    this.screen = 'countdown';
+    this.cd = 0; this.cdShown = 0;
+    $('#countdown').hidden = false;
+  },
+
+  beginPlay() {
+    $('#countdown').hidden = true;
+    this.game.start();
+    this.screen = 'game';
+    this.acc = 0;
+    sfx.play('go');
+  },
+
+  pause() {
+    if (this.screen !== 'game') return;
+    this.screen = 'pause';
+    this.controller.releaseAll();
+    this.show('scr-pause');
+    $('#btn-resume').focus();
+  },
+  resume() {
+    if (this.screen !== 'pause') return;
+    this.show(null);
+    if (document.activeElement) document.activeElement.blur();
+    this.controller.releaseAll();
+    this.screen = 'game';
+    this.acc = 0;
+  },
+
+  onGameEnd() {
+    const g = this.game;
+    this.screen = 'ended';
+    this.controller.releaseAll();
+    const rec = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 5),
+      mode: g.mode, playedAt: new Date().toISOString(),
+      finished: g.result !== 'topout', reason: g.result,
+      score: g.score, lines: g.lines, level: g.level, timeMs: Math.round(g.elapsed),
+      pieces: g.stats.pieces,
+      pps: g.elapsed > 0 ? +(g.stats.pieces / (g.elapsed / 1000)).toFixed(2) : 0,
+      kpp: g.stats.pieces ? +(g.stats.keys / g.stats.pieces).toFixed(2) : 0,
+      clears: { ...g.stats.clears },
+      maxCombo: Math.max(0, g.stats.maxCombo), maxB2B: Math.max(0, g.stats.maxB2B),
+      perfectClears: g.stats.pc, name: settings.lastName || '', seed: g.seed,
+    };
+    this.lastRecord = rec;
+    this.saveOk = store.add(rec) && (!!STORAGE || Folder.state === 'on');
+    const ranked = store.ranked(g.mode);
+    const rank = isRanked(rec) ? ranked.findIndex(r => r.id === rec.id) + 1 : 0;
+    this.lastRank = { rank, total: ranked.length, isNew: rank === 1 };
+    sfx.play(g.result === 'topout' ? 'over' : 'finish');
+    if (rank === 1) setTimeout(() => sfx.play('record'), 700);
+    setTimeout(() => { if (this.screen === 'ended' && this.game === g) this.showResult(); }, 900);
+  },
+
+  showResult() {
+    this.screen = 'result';
+    const r = this.lastRecord, { rank, total, isNew } = this.lastRank, m = r.mode;
+    const heads = { topout: m === 'marathon' ? '게임 오버' : '게임 오버 · 미완주', clear: m === 'sprint' ? '40줄 완주!' : '150줄 완주!', time: '시간 종료' };
+    const main = m === 'sprint' ? (r.finished ? fmtTime(r.timeMs) : `${r.lines} / 40줄`) : fmtNum(r.score) + '점';
+    const rankLine = !isRanked(r)
+      ? '완주하지 못한 판은 순위에 들어가지 않습니다'
+      : `${MODE_NAMES[m]} ${rank}위 / ${total}판` + (total === 1 ? ' · 첫 기록' : '');
+    const cell = (k, v) => `<div><span class="k">${k}</span><span class="v num">${v}</span></div>`;
+    const c = r.clears;
+    $('#result-card').innerHTML = `
+      <div class="res-head"><h2 style="margin:0">${heads[r.reason]}</h2><span class="res-rank">${MODE_NAMES[m]}</span></div>
+      <div class="res-main num">${main}${isNew ? '<span class="badge">신기록!</span>' : ''}</div>
+      <div class="res-rank">${rankLine}</div>
+      <div class="stat-grid">
+        ${cell('점수', fmtNum(r.score))}${cell('시간', fmtTime(r.timeMs))}${cell('줄', r.lines)}
+        ${cell('레벨', r.level)}${cell('놓은 블록', r.pieces)}${cell('PPS', r.pps.toFixed(2))}
+        ${cell('KPP', r.kpp.toFixed(2))}${cell('최대 콤보', r.maxCombo)}${cell('최대 B2B', r.maxB2B)}
+        ${cell('테트리스', c.tetris)}${cell('T-스핀', c.tspin)}${cell('싱글·더블·트리플', `${c.single}·${c.double}·${c.triple}`)}
+      </div>
+      <label class="name-row">별명 <input id="name-input" maxlength="12" placeholder="기록에 남길 이름 (선택)" value="${esc(r.name)}"></label>
+      ${this.saveOk ? '' : '<div class="notice">기록이 저장되지 않았습니다. 브라우저 저장소를 쓸 수 없는 환경입니다.</div>'}
+      <div class="save-loc" data-folder-status>${Folder.statusHTML()}</div>
+      <div class="row-btns">
+        <button class="btn primary grow" id="res-retry">다시 하기 (Enter)</button>
+        <button class="btn" id="res-records">기록 보기</button>
+        <button class="btn" id="res-title">타이틀 (Esc)</button>
+      </div>`;
+    const input = $('#name-input');
+    input.addEventListener('input', () => {
+      const name = input.value.trim().slice(0, 12);
+      settings.lastName = name; saveSettings();
+      r.name = name;
+      if (this.saveOk) store.update(r.id, { name });
+    });
+    $('#res-retry').onclick = () => this.startGame(m);
+    $('#res-records').onclick = () => this.openRecords(m);
+    $('#res-title').onclick = () => this.toTitle();
+    this.show('scr-result');
+    $('#res-retry').focus();
+  },
+
+  // ----- 키 입력 -----
+  onKeyDown(e) {
+    if (this.capture) { e.preventDefault(); this.finishCapture(e.code); return; }
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.type === 'text') {
+      if (e.key === 'Enter' || e.key === 'Escape') t.blur();
+      return;
+    }
+    const act = this.keymap[e.code];
+    switch (this.screen) {
+      case 'game':
+      case 'countdown':
+        if (!act) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        if (act === 'pause') { if (this.screen === 'game') this.pause(); return; }
+        if (act === 'restart') { this.startGame(this.mode); return; }
+        if (this.screen === 'game' && this.game.active) this.game.stats.keys++;
+        this.controller.press(act);
+        return;
+      case 'pause':
+        if (act === 'pause') { e.preventDefault(); this.resume(); }
+        else if (act === 'restart') { e.preventDefault(); this.startGame(this.mode); }
+        return;
+      case 'ended':
+        if (act) e.preventDefault();
+        if (act === 'restart' && !e.repeat) this.startGame(this.mode);
+        return;
+      case 'result':
+        if ((e.code === 'Enter' || act === 'restart') && !e.repeat) { e.preventDefault(); this.startGame(this.mode); }
+        else if (e.code === 'Escape') this.toTitle();
+        return;
+      case 'title': {
+        const n = { Digit1: 'marathon', Digit2: 'sprint', Digit3: 'ultra', Numpad1: 'marathon', Numpad2: 'sprint', Numpad3: 'ultra' }[e.code];
+        if (n) { e.preventDefault(); this.startGame(n); }
+        return;
+      }
+      case 'records':
+        if (e.code === 'Escape') this.closeRecords();
+        return;
+      case 'settings':
+        if (e.code === 'Escape') this.toTitle();
+        return;
+    }
+  },
+  onKeyUp(e) {
+    const act = this.keymap[e.code];
+    if (act && this.controller) this.controller.release(act);
+  },
+
+  // ----- 게임 루프 -----
+  frame(now) {
+    const dt = Math.min(now - this.last, 250);
+    this.last = now;
+    if (this.screen === 'countdown') {
+      this.cd += dt;
+      const n = 3 - Math.floor(this.cd / 650);
+      if (n !== this.cdShown) {
+        this.cdShown = n;
+        if (n > 0) { $('#countdown').textContent = n; sfx.play('count'); }
+      }
+      if (this.cd >= 1950) this.beginPlay();
+    }
+    if (this.screen === 'game') {
+      this.acc += dt;
+      while (this.acc >= STEP) {
+        this.controller.update(STEP);
+        this.game.tick(STEP);
+        this.acc -= STEP;
+        if (this.game.over) break;
+      }
+    }
+    if (this.game) {
+      this.drainEvents();
+      if (this.game.over && this.screen === 'game') this.onGameEnd();
+    }
+    this.render();
+    this.updateHud();
+    requestAnimationFrame(t => this.frame(t));
+  },
+
+  drainEvents() {
+    const ev = this.game.events;
+    if (!ev.length) return;
+    this.game.events = [];
+    let moved = false;
+    for (const e of ev) {
+      switch (e.type) {
+        case 'move': moved = true; break;
+        case 'rotate': sfx.play('rotate'); break;
+        case 'hold': sfx.play('hold'); break;
+        case 'harddrop': sfx.play('hard'); if (settings.shake && e.dist > 0) this.shake(false); break;
+        case 'lock': if (!e.hard) sfx.play('lock'); break;
+        case 'clear': this.onClear(e); break;
+        case 'levelup': sfx.play('level'); this.popup([['n', `LEVEL ${e.level}`]]); break;
+      }
+    }
+    if (moved) sfx.play('move');
+  },
+
+  onClear(e) {
+    if (e.lines > 0) this.flashes.push({ rows: e.rows, t: performance.now() });
+    if (e.tspin) sfx.play('tspin');
+    if (e.pc) sfx.play('pc');
+    else if (e.lines === 4) sfx.play('tetris');
+    else if (e.lines > 0) sfx.play('clear', e.lines);
+    if (e.combo > 0) sfx.play('combo', e.combo);
+    if (settings.shake && (e.lines === 4 || e.pc)) this.shake(true);
+    const lines = [];
+    const special = e.lines === 4 || e.tspin;
+    if (special || e.b2b) lines.push(['n', (e.b2b ? 'B2B ' : '') + e.name]);
+    if (e.combo > 0) lines.push(['c', `${e.combo} COMBO`]);
+    if (e.pc) lines.push(['pc', 'PERFECT CLEAR']);
+    if (lines.length && e.pts > 0) lines.push(['p', '+' + fmtNum(e.pts)]);
+    if (lines.length) this.popup(lines);
+  },
+
+  popup(lines) {
+    const box = $('#popups');
+    while (box.children.length >= 2) box.firstChild.remove();
+    const el = document.createElement('div');
+    el.className = 'popup';
+    el.innerHTML = lines.map(([c, t]) => `<span class="${c}">${esc(t)}</span>`).join('');
+    box.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+  },
+
+  shake(big) {
+    const w = $('#board-wrap');
+    w.classList.remove('shake', 'shake-big');
+    void w.offsetWidth;
+    w.classList.add(big ? 'shake-big' : 'shake');
+  },
+
+  // ----- 그리기 -----
+  render() {
+    const ctx = this.ctxBoard, c = this.cell, g = this.game;
+    if (!ctx) return;
+    const top = HIDDEN - 2;  // 보드 위 2줄(버퍼)도 보이게 그린다
+    ctx.clearRect(0, 0, c * COLS, c * 22);
+    ctx.fillStyle = '#0a0c10';
+    ctx.fillRect(0, 2 * c, c * COLS, 20 * c);
+    if (settings.grid) {
+      ctx.strokeStyle = '#1a1e27';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 1; x < COLS; x++) { ctx.moveTo(x * c + 0.5, 2 * c); ctx.lineTo(x * c + 0.5, 22 * c); }
+      for (let y = 3; y < 22; y++) { ctx.moveTo(0, y * c + 0.5); ctx.lineTo(COLS * c, y * c + 0.5); }
+      ctx.stroke();
+    }
+    if (g) {
+      const dead = g.over && g.result === 'topout';
+      for (let y = top; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const t = g.board[y][x];
+          if (t) drawBlock(ctx, x * c, (y - top) * c, c, dead ? '#4a4f5a' : COLORS[t]);
+        }
+      }
+      const p = g.active;
+      if (p && !g.over) {
+        if (settings.ghost) {
+          const d = g.dropDistance();
+          ctx.save();
+          for (const [x, y] of g.cells(p)) {
+            const gy = y + d - top;
+            if (gy < 0) continue;
+            ctx.globalAlpha = 0.18; ctx.fillStyle = COLORS[p.type];
+            ctx.fillRect(x * c, gy * c, c, c);
+            ctx.globalAlpha = 0.55; ctx.strokeStyle = COLORS[p.type]; ctx.lineWidth = 1.5;
+            ctx.strokeRect(x * c + 1.5, gy * c + 1.5, c - 3, c - 3);
+          }
+          ctx.restore();
+        }
+        // 바닥에서 락 타이머가 흐르는 동안 살짝 어두워진다
+        const fade = g.onGround() ? Math.min(1, g.lockTimer / LOCK_DELAY) * 0.35 : 0;
+        for (const [x, y] of g.cells(p)) {
+          if (y < top) continue;
+          drawBlock(ctx, x * c, (y - top) * c, c, COLORS[p.type]);
+          if (fade) { ctx.fillStyle = `rgba(0,0,0,${fade})`; ctx.fillRect(x * c, (y - top) * c, c, c); }
+        }
+      }
+      const now = performance.now();
+      this.flashes = this.flashes.filter(f => now - f.t < 220);
+      for (const f of this.flashes) {
+        ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - (now - f.t) / 220)})`;
+        for (const y of f.rows) if (y >= top) ctx.fillRect(0, (y - top) * c, COLS * c, c);
+      }
+    }
+    ctx.strokeStyle = '#3a4150';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 2 * c + 1, COLS * c - 2, 20 * c - 2);
+
+    const m = this.mini, hc = this.ctxHold, nc = this.ctxNext;
+    hc.clearRect(0, 0, m * 5, m * 3);
+    if (g && g.holdType) drawMini(hc, g.holdType, m * 2.5, m * 1.5, m, !g.canHold);
+    nc.clearRect(0, 0, m * 5, m * 15);
+    if (g) g.queue.slice(0, 5).forEach((t, i) => drawMini(nc, t, m * 2.5, m * 1.5 + i * m * 3, i === 0 ? m : m * 0.85));
+  },
+
+  renderSideInfo() {
+    const k = a => `<b>${keyLabel(settings.keys[a][0])}</b>`;
+    $('#mode-box').innerHTML = `
+      <div class="label">모드</div>
+      <div class="mode-title">${MODE_NAMES[this.mode]}</div>
+      <div class="mode-desc">${MODE_DESC[this.mode]}</div>
+      <div class="keys-mini">${k('hold')} 홀드 · ${k('r180')} 180°<br>${k('pause')} 일시정지 · ${k('restart')} 재시작</div>`;
+  },
+
+  buildHud() {
+    const rows = HUD_LAYOUT[this.mode];
+    $('#hud').innerHTML = rows.map(([key, label, big]) =>
+      `<div class="stat${big ? ' big' : ''}"><span class="k">${label}</span><span class="v num" data-v="${key}">–</span><span class="s" data-s="${key}"></span></div>`).join('');
+    this.hudEls = {};
+    for (const [key] of rows) this.hudEls[key] = { v: document.querySelector(`[data-v="${key}"]`), s: document.querySelector(`[data-s="${key}"]`), last: '' };
+  },
+
+  updateHud() {
+    const g = this.game;
+    if (!g || !this.hudEls) return;
+    const sec = g.elapsed / 1000, pb = this.pb;
+    const set = (key, v, s = '', cls = '') => {
+      const el = this.hudEls[key];
+      if (!el) return;
+      const sig = v + '|' + s + '|' + cls;
+      if (el.last === sig) return;
+      el.last = sig;
+      el.v.textContent = v;
+      el.v.className = 'v num' + (cls ? ' ' + cls : '');
+      el.s.textContent = s;
+    };
+    set('score', fmtNum(g.score));
+    set('time', fmtTime(g.elapsed));
+    set('timeleft', fmtTime(ULTRA_MS - g.elapsed), '', ULTRA_MS - g.elapsed < 10000 && this.screen === 'game' ? 'bad' : '');
+    set('lines', String(g.lines));
+    set('remain', String(Math.max(0, SPRINT_LINES - g.lines)));
+    set('level', String(g.level), g.level < MAX_LEVEL ? `다음 레벨까지 ${g.level * 10 - g.lines}줄` : '최고 레벨');
+    set('pps', sec > 0.5 ? (g.stats.pieces / sec).toFixed(2) : '0.00');
+    set('kpp', g.stats.pieces ? (g.stats.keys / g.stats.pieces).toFixed(2) : '0.00');
+    set('combo', `${Math.max(0, g.combo)} / ${Math.max(0, g.b2b)}`, `최대 ${Math.max(0, g.stats.maxCombo)} / ${Math.max(0, g.stats.maxB2B)}`);
+
+    if (!pb) { set('pb', '첫 기록 도전', ''); return; }
+    if (this.mode === 'marathon') {
+      const d = g.score - pb.score;
+      set('pb', (d >= 0 ? '+' : '−') + fmtNum(Math.abs(d)), `최고 ${fmtNum(pb.score)}점`, d >= 0 ? 'good' : 'bad');
+    } else if (this.mode === 'ultra') {
+      const d = g.score - pb.score * (g.elapsed / ULTRA_MS);
+      set('pb', g.elapsed < 1000 ? '–' : (d >= 0 ? '+' : '−') + fmtNum(Math.abs(d)), `최고 ${fmtNum(pb.score)}점`, g.elapsed < 1000 ? '' : d >= 0 ? 'good' : 'bad');
+    } else {
+      if (!g.lines) { set('pb', '–', `최고 ${fmtTime(pb.timeMs)}`); return; }
+      const d = g.elapsed - pb.timeMs * Math.min(g.lines, SPRINT_LINES) / SPRINT_LINES;
+      set('pb', (d <= 0 ? '−' : '+') + (Math.abs(d) / 1000).toFixed(2) + '초', `최고 ${fmtTime(pb.timeMs)}`, d <= 0 ? 'good' : 'bad');
+    }
+  },
+
+  // ----- 기록 화면 -----
+  openRecords(mode) {
+    this.recFrom = this.screen;
+    if (mode) this.recTab = mode;
+    this.screen = 'records';
+    this.show('scr-records');
+    this.renderRecords();
+  },
+  closeRecords() {
+    if (this.recFrom === 'result') { this.screen = 'result'; this.show('scr-result'); $('#res-retry').focus(); }
+    else this.toTitle();
+  },
+
+  renderRecords() {
+    const mode = this.recTab, all = store.load();
+    const list = all.filter(r => r.mode === mode);
+    const ranked = store.ranked(mode, all), best = ranked[0];
+    const sprint = mode === 'sprint';
+    const maxOf = (arr, f) => arr.length ? Math.max(...arr.map(f)) : 0;
+    const card = (k, v) => `<div><span class="k">${k}</span><span class="v num">${v}</span></div>`;
+    const cards = sprint
+      ? card('최단 기록', best ? fmtTime(best.timeMs) : '—') + card('최고 PPS', list.length ? maxOf(list, r => r.pps || 0).toFixed(2) : '—')
+        + card('완주', `${ranked.length}회`) + card('플레이', `${list.length}판`)
+      : card('최고 점수', best ? fmtNum(best.score) : '—') + card('최고 PPS', list.length ? maxOf(list, r => r.pps || 0).toFixed(2) : '—')
+        + card('최다 줄', list.length ? maxOf(list, r => r.lines) : '—') + card('플레이', `${list.length}판`);
+    const valueOf = r => sprint ? (r.finished ? fmtTime(r.timeMs) : `${r.lines}줄 (미완주)`) : fmtNum(r.score);
+    const rowsTop = ranked.slice(0, 10).map((r, i) => `
+      <tr class="${this.lastRecord && r.id === this.lastRecord.id ? 'me' : ''}">
+        <td>${i + 1}</td><td class="r num">${valueOf(r)}</td><td class="r num">${r.lines}</td>
+        <td class="r num">${(r.pps || 0).toFixed(2)}</td><td>${esc(r.name || '')}</td><td class="num">${fmtDate(r.playedAt)}</td></tr>`).join('');
+    const recent = list.slice().sort((a, b) => b.playedAt.localeCompare(a.playedAt)).slice(0, 10);
+    const rowsRecent = recent.map(r => `
+      <tr class="${this.lastRecord && r.id === this.lastRecord.id ? 'me' : ''}">
+        <td class="num">${fmtDate(r.playedAt)}</td><td class="r num">${valueOf(r)}</td>
+        <td class="r num">${sprint ? fmtNum(r.score) : fmtTime(r.timeMs)}</td><td class="r num">${(r.pps || 0).toFixed(2)}</td></tr>`).join('');
+    const totalTime = all.reduce((s, r) => s + r.timeMs, 0), totalLines = all.reduce((s, r) => s + r.lines, 0);
+    $('#records-card').innerHTML = `
+      <div class="res-head">
+        <h2 style="margin:0">기록</h2>
+        <div class="tabs">${MODES.map(m => `<button data-tab="${m}" aria-pressed="${m === mode}">${MODE_NAMES[m]}</button>`).join('')}</div>
+      </div>
+      <div class="cards">${cards}</div>
+      <h3>최근 30판 추이 ${sprint ? '· 완주 시간 (낮을수록 좋음)' : '· 점수'}</h3>
+      <canvas id="rec-chart"></canvas>
+      <div class="two-col">
+        <div><h3>상위 10위</h3>${rowsTop ? `<table class="tbl"><tr><th>#</th><th class="r">${sprint ? '시간' : '점수'}</th><th class="r">줄</th><th class="r">PPS</th><th>별명</th><th>날짜</th></tr>${rowsTop}</table>` : '<div class="empty">아직 순위에 든 기록이 없습니다.</div>'}</div>
+        <div><h3>최근 기록</h3>${rowsRecent ? `<table class="tbl"><tr><th>날짜</th><th class="r">${sprint ? '결과' : '점수'}</th><th class="r">${sprint ? '점수' : '시간'}</th><th class="r">PPS</th></tr>${rowsRecent}</table>` : '<div class="empty">아직 플레이한 판이 없습니다.</div>'}</div>
+      </div>
+      <div class="totals">전체 누적 · ${all.length}판 · ${fmtDuration(totalTime)} · ${fmtNum(totalLines)}줄</div>
+      <div class="save-loc" data-folder-status>${Folder.statusHTML()}</div>
+      <div class="row-btns">
+        <button class="btn" id="rec-export">내보내기 (JSON)</button>
+        <button class="btn" id="rec-import">가져오기</button>
+        <button class="btn danger" id="rec-clear">모든 기록 삭제</button>
+        <span class="grow"></span>
+        <button class="btn primary" id="rec-close">닫기 (Esc)</button>
+      </div>`;
+    document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { this.recTab = b.dataset.tab; this.renderRecords(); });
+    $('#rec-export').onclick = () => this.exportRecords();
+    $('#rec-import').onclick = () => $('#file-import').click();
+    $('#rec-clear').onclick = () => {
+      if (confirm('모든 모드의 기록을 지웁니다. 되돌릴 수 없습니다. 계속할까요?')) { store.clear(); this.renderRecords(); }
+    };
+    $('#rec-close').onclick = () => this.closeRecords();
+    this.drawTrend(list, sprint);
+  },
+
+  drawTrend(list, sprint) {
+    const cv = $('#rec-chart');
+    const w = cv.clientWidth || 600, h = 180;
+    const ctx = setupCanvas(cv, w, h);
+    const pts = list.filter(r => !sprint || r.finished).sort((a, b) => a.playedAt.localeCompare(b.playedAt)).slice(-30);
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#8a90a0';
+    if (pts.length < 2) {
+      ctx.textAlign = 'center';
+      ctx.fillText('두 판 이상 기록되면 추이 그래프가 나타납니다', w / 2, h / 2);
+      return;
+    }
+    const val = r => sprint ? r.timeMs : r.score;
+    let lo = Math.min(...pts.map(val)), hi = Math.max(...pts.map(val));
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const L = 70, R = 16, T = 16, B = 26;
+    const X = i => L + i * (w - L - R) / (pts.length - 1);
+    const Y = v => T + (hi - v) / (hi - lo) * (h - T - B);
+    const fmt = v => sprint ? fmtTime(v) : fmtNum(v);
+    ctx.strokeStyle = '#2a2f3a'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const v of [lo, (lo + hi) / 2, hi]) { ctx.moveTo(L, Y(v) + 0.5); ctx.lineTo(w - R, Y(v) + 0.5); }
+    ctx.stroke();
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const v of [lo, (lo + hi) / 2, hi]) ctx.fillText(fmt(v), L - 8, Y(v));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`최근 ${pts.length}판 (왼쪽이 오래된 판)`, (L + w - R) / 2, h - 6);
+    ctx.strokeStyle = '#6ea8ff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach((r, i) => i ? ctx.lineTo(X(i), Y(val(r))) : ctx.moveTo(X(i), Y(val(r))));
+    ctx.stroke();
+    const bestV = sprint ? Math.min(...pts.map(val)) : Math.max(...pts.map(val));
+    pts.forEach((r, i) => {
+      const isBest = val(r) === bestV;
+      ctx.fillStyle = isBest ? '#ffcc4d' : '#6ea8ff';
+      ctx.beginPath(); ctx.arc(X(i), Y(val(r)), isBest ? 5 : 3, 0, Math.PI * 2); ctx.fill();
+    });
+  },
+
+  exportRecords() {
+    const data = { version: 1, exportedAt: new Date().toISOString(), records: store.load() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    a.href = URL.createObjectURL(blob);
+    a.download = `tetris-records-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  },
+
+  importFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(reader.result);
+        const arr = Array.isArray(d) ? d : d && d.records;
+        if (!Array.isArray(arr)) throw new Error();
+        const n = store.merge(arr);
+        alert(`기록 ${n}건을 가져왔습니다.`);
+      } catch (e) {
+        alert('기록 파일을 읽지 못했습니다. 이 게임에서 내보낸 JSON 파일인지 확인해 주세요.');
+      }
+      $('#file-import').value = '';
+      if (this.screen === 'records') this.renderRecords();
+    };
+    reader.readAsText(file);
+  },
+
+  // ----- 설정 화면 -----
+  openSettings() {
+    this.screen = 'settings';
+    this.show('scr-settings');
+    this.renderSettings();
+  },
+
+  renderSettings() {
+    const s = settings;
+    const slider = (key, label, min, max, unit) => `
+      <div class="set-row"><span>${label}</span><input type="range" min="${min}" max="${max}" step="1" value="${s[key]}" data-set="${key}"><span class="val num" data-val="${key}"></span></div>`;
+    const toggle = (key, label) => `<label><input type="checkbox" data-tog="${key}" ${s[key] ? 'checked' : ''}> ${label}</label>`;
+    const keyRows = ACTIONS.map(([a, label]) => `
+      <tr><td>${label}</td>${[0, 1].map(i => `<td><button class="keybtn${this.capture && this.capture.action === a && this.capture.slot === i ? ' wait' : ''}" data-key="${a}" data-slot="${i}">${this.capture && this.capture.action === a && this.capture.slot === i ? '키를 누르세요' : keyLabel(s.keys[a][i])}</button></td>`).join('')}</tr>`).join('');
+    $('#settings-card').innerHTML = `
+      <h2>설정</h2>
+      <h3>조작 감도</h3>
+      ${slider('das', 'DAS · 자동 반복 시작')}
+      ${slider('arr', 'ARR · 반복 간격')}
+      ${slider('sdf', '소프트 드롭 속도')}
+      <div class="hint">DAS는 좌우 키를 누르고 있을 때 연속 이동이 시작되기까지의 시간, ARR은 그다음 한 칸씩 움직이는 간격입니다. ARR 0은 벽까지 즉시 이동합니다.</div>
+      <h3>표시와 소리</h3>
+      <div class="toggles">${toggle('ghost', '고스트 블록')}${toggle('grid', '격자')}${toggle('shake', '흔들림 효과')}${toggle('sound', '효과음')}</div>
+      <div class="set-row"><span>음량</span><input type="range" min="0" max="100" step="1" value="${Math.round(s.volume * 100)}" data-set="volume"><span class="val num" data-val="volume"></span></div>
+      <h3>키 배치</h3>
+      <table class="tbl keytbl">${keyRows}</table>
+      <div class="hint">버튼을 누른 뒤 원하는 키를 누르세요. Backspace 는 비우기, Esc 는 취소입니다.</div>
+      <div class="row-btns">
+        <button class="btn" id="set-reset">키·감도 기본값</button>
+        <span class="grow"></span>
+        <button class="btn primary" id="set-close">닫기 (Esc)</button>
+      </div>`;
+    const showVal = key => {
+      const v = s[key], el = document.querySelector(`[data-val="${key}"]`);
+      el.textContent = key === 'sdf' ? (v >= 41 ? '∞' : v + 'x') : key === 'volume' ? Math.round(v * 100) + '%' : v + 'ms';
+    };
+    const ranges = { das: [0, 300], arr: [0, 100], sdf: [1, 41] };
+    document.querySelectorAll('[data-set]').forEach(inp => {
+      const key = inp.dataset.set;
+      if (ranges[key]) { inp.min = ranges[key][0]; inp.max = ranges[key][1]; inp.value = s[key]; }
+      showVal(key);
+      inp.oninput = () => {
+        s[key] = key === 'volume' ? inp.value / 100 : Number(inp.value);
+        showVal(key); saveSettings();
+      };
+      if (key === 'volume') inp.onchange = () => sfx.play('rotate');
+    });
+    document.querySelectorAll('[data-tog]').forEach(inp => inp.onchange = () => { s[inp.dataset.tog] = inp.checked; saveSettings(); });
+    document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => {
+      this.capture = { action: b.dataset.key, slot: Number(b.dataset.slot) };
+      this.renderSettings();
+    });
+    $('#set-reset').onclick = () => {
+      for (const [a] of ACTIONS) s.keys[a] = DEFAULT_KEYS[a].slice();
+      s.das = DEFAULT_SETTINGS.das; s.arr = DEFAULT_SETTINGS.arr; s.sdf = DEFAULT_SETTINGS.sdf;
+      saveSettings(); this.buildKeymap(); this.renderSettings();
+    };
+    $('#set-close').onclick = () => this.toTitle();
+  },
+
+  finishCapture(code) {
+    const { action, slot } = this.capture;
+    this.capture = null;
+    if (code === 'Escape' && !(action === 'pause')) { this.renderSettings(); return; }
+    if (code === 'Backspace' || code === 'Delete') code = '';
+    if (code) for (const [a] of ACTIONS) settings.keys[a] = settings.keys[a].map(c => c === code ? '' : c);
+    settings.keys[action][slot] = code;
+    saveSettings();
+    this.buildKeymap();
+    this.renderSettings();
+  },
+
+  // ----- 자체 테스트 -----
+  showTests() {
+    this.screen = 'test';
+    const res = runSelfTests();
+    const pass = res.filter(r => r.ok).length;
+    $('#test-card').innerHTML = `
+      <h2 id="test-summary">자체 테스트 ${pass} / ${res.length} 통과</h2>
+      <ul>${res.map(r => `<li class="${r.ok ? 'ok' : 'fail'}">${r.ok ? '통과' : '실패'} · ${esc(r.name)}${r.err ? ' — ' + esc(r.err) : ''}</li>`).join('')}</ul>
+      <div class="row-btns"><a class="btn primary" href="${location.pathname}" style="text-decoration:none">게임으로</a></div>`;
+    this.show('scr-test');
+    console.table(res);
+  },
+};
+
+App.init();
+</script>
+</body>
+</html>
