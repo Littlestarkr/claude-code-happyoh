@@ -143,6 +143,16 @@
   .card p { margin: 0 0 18px; font-size: 16px; }
   .card .actions { justify-content: center; }
 
+  .level { display: inline-flex; align-items: center; gap: 6px; }
+  .lv-end { font-size: 12px; color: var(--muted); }
+  #levelSeg button { min-width: 38px; padding-left: 0; padding-right: 0; font-variant-numeric: tabular-nums; }
+  .lv-desc {
+    margin: 0 0 12px; padding: 9px 12px;
+    font-size: 13px; line-height: 1.5; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .lv-desc strong { color: var(--ink); font-weight: 600; margin-right: 4px; }
+
   .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 12px 2px 0; }
   .legend span { display: inline-flex; align-items: center; }
   .sw { width: 12px; height: 12px; border-radius: 50%; border: 2px solid; margin-right: 6px; display: inline-block; }
@@ -157,6 +167,7 @@
   @media (max-width: 420px) {
     .seg button { padding: 7px 11px; font-size: 13px; }
     .seg.sm button { padding: 5px 9px; }
+    #levelSeg button { min-width: 32px; }
     .fname { margin-left: 0; width: 100%; }
     .btn { padding: 8px 11px; font-size: 13px; }
   }
@@ -170,16 +181,24 @@
   </header>
 
   <div class="bar">
-    <div class="seg" id="levelSeg" role="group" aria-label="난이도">
-      <button data-level="1">초급</button>
-      <button data-level="2">중급</button>
-      <button data-level="3">전문가</button>
+    <div class="level">
+      <span class="lv-end">초보</span>
+      <div class="seg" id="levelSeg" role="group" aria-label="난이도 (1 초보 ~ 5 전문가)">
+        <button data-level="1" aria-label="1단계">1</button>
+        <button data-level="2" aria-label="2단계">2</button>
+        <button data-level="3" aria-label="3단계">3</button>
+        <button data-level="4" aria-label="4단계">4</button>
+        <button data-level="5" aria-label="5단계">5</button>
+      </div>
+      <span class="lv-end">전문가</span>
     </div>
     <div class="actions">
       <button class="btn" id="undoBtn">무르기</button>
       <button class="btn" id="newBtn">새 게임</button>
     </div>
   </div>
+
+  <p class="lv-desc" id="levelDesc" aria-live="polite"></p>
 
   <div class="setup">
     <span class="label">상차림</span>
@@ -231,8 +250,10 @@ LINES.forEach(function (L) { L.forEach(function (q, pos) { DIAG[q].push([L, pos]
 var ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 var LEVELS = {
   1: { depth: 1, noise: 70, q: 1, time: 1500 },
-  2: { depth: 3, noise: 10, q: 4, time: 3000 },
-  3: { depth: 12, noise: 0, q: 6, time: 3500 }
+  2: { depth: 2, noise: 35, q: 2, time: 2000 },
+  3: { depth: 3, noise: 10, q: 4, time: 3000 },
+  4: { depth: 5, noise: 0, q: 5, time: 2500 },
+  5: { depth: 12, noise: 0, q: 6, time: 3500 }
 };
 var ABORT = { abort: true };
 var nodes = 0, deadline = 0, killers = null, QMAX = 6;
@@ -469,7 +490,7 @@ function think(board, side, level) {
   var root = legalMoves(b, side);
   if (!root.length) return -1;
   if (root.length === 1) return root[0];
-  var cfg = LEVELS[level] || LEVELS[2];
+  var cfg = LEVELS[level] || LEVELS[3];
   var start = Date.now();
   QMAX = cfg.q; nodes = 0; deadline = start + cfg.time; killers = new Int32Array(65);
   orderMoves(b, root, 0);
@@ -537,12 +558,27 @@ function think(board, side, level) {
     '1':  { 1: '楚', 2: '車', 3: '包', 4: '馬', 5: '象', 6: '士', 7: '卒' },
     '-1': { 1: '漢', 2: '車', 3: '包', 4: '馬', 5: '象', 6: '士', 7: '兵' }
   };
-  var LEVEL_NAME = { 1: '초급', 2: '중급', 3: '전문가' };
+  var LEVEL_NAME = { 1: '1단계', 2: '2단계', 3: '3단계', 4: '4단계', 5: '5단계' };
+  var LEVEL_DESC = {
+    1: ['1단계 · 입문', '한 수 앞만 보고 실수가 잦습니다. 장기를 처음 배우는 분께 알맞습니다.'],
+    2: ['2단계 · 초보', '두 수 앞을 보지만 가끔 엉뚱한 수를 둡니다. 말 움직임에 익숙해졌다면 도전해 보세요.'],
+    3: ['3단계 · 중급', '세 수 앞을 읽고 기물 교환을 따집니다. 실수는 드물며 기본 전술을 아는 분께 맞습니다.'],
+    4: ['4단계 · 상급', '실수 없이 다섯 수 앞까지 읽습니다. 수 읽기와 포석을 제대로 연습하고 싶다면.'],
+    5: ['5단계 · 전문가', '제한 시간 안에서 최대한 깊이 읽는 가장 강한 설정입니다. 한 번의 실수도 놓치지 않습니다.']
+  };
 
   var board, history, turn, gameOver, winner, selected, userMoves, lastAI, checkUser, thinking;
   var searchId = 0, pending = null, worker = null, justMoved = -1;
-  var level = 2;
-  try { var saved = parseInt(localStorage.getItem('janggi-level'), 10); if (saved >= 1 && saved <= 3) level = saved; } catch (e) {}
+  var level = 3;
+  try {
+    var saved = parseInt(localStorage.getItem('janggi-level5'), 10);
+    if (saved >= 1 && saved <= 5) level = saved;
+    else {
+      // 예전 3단계 설정(초급/중급/전문가)을 1/3/5단계로 옮김
+      var old = parseInt(localStorage.getItem('janggi-level'), 10);
+      if (old >= 1 && old <= 3) level = old * 2 - 1;
+    }
+  } catch (e) {}
 
   var svg = document.getElementById('board');
   var layer = document.getElementById('layer');
@@ -654,6 +690,8 @@ function think(board, side, level) {
     document.querySelectorAll('#levelSeg button').forEach(function (btn) {
       btn.setAttribute('aria-pressed', String(+btn.dataset.level === level));
     });
+    document.getElementById('levelDesc').innerHTML =
+      '<strong>' + LEVEL_DESC[level][0] + '</strong>' + LEVEL_DESC[level][1];
     document.querySelectorAll('.seg[data-side] button').forEach(function (btn) {
       btn.setAttribute('aria-pressed', String(setup[btn.parentNode.dataset.side] === btn.dataset.v));
     });
@@ -813,7 +851,7 @@ function think(board, side, level) {
   document.querySelectorAll('#levelSeg button').forEach(function (btn) {
     btn.addEventListener('click', function () {
       level = +btn.dataset.level;
-      try { localStorage.setItem('janggi-level', String(level)); } catch (e) {}
+      try { localStorage.setItem('janggi-level5', String(level)); } catch (e) {}
       render();
     });
   });
