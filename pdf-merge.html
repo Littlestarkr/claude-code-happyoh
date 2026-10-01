@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>PDF 합치기 · 분할</title>
+<title>HappyOh PDF 도구</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" onerror="window.__pdfLibFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onerror="window.__pdfjsFailed=true"></script>
 <style>
@@ -119,11 +119,21 @@
   }
   .group-row .group-del{border:none; background:none; color:var(--danger); font-size:1.1rem; cursor:pointer; padding:2px 4px;}
   .group-row .group-status{flex-basis:100%; order:4; font-size:.78rem; color:var(--sub); min-height:1em;}
+  .footer{
+    margin-top:32px; padding-top:20px; border-top:1px solid var(--border);
+    text-align:center;
+  }
+  .footer a{
+    display:inline-flex; align-items:center; gap:6px;
+    color:var(--sub); text-decoration:none; font-size:.85rem; font-weight:600;
+  }
+  .footer a:hover{color:var(--accent);}
+  .footer a svg{width:16px; height:16px; flex-shrink:0;}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>📄 PDF 합치기 · 분할</h1>
+  <h1>📄 HappyOh PDF 도구</h1>
   <p class="sub">파일은 서버로 전송되지 않고 이 브라우저 안에서만 처리됩니다.</p>
   <div id="lib-error" style="display:none; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:10px; padding:12px 14px; margin-bottom:16px; font-size:.9rem;">
     처리 엔진을 불러오지 못했어요. 네트워크가 느리거나 일부 외부 주소가 차단된 환경일 수 있어요. Wi-Fi/데이터를 바꾸거나 새로고침(아래로 당기기)해 보세요.
@@ -186,6 +196,16 @@
         <div class="status" id="split-status"></div>
       </div>
     </div>
+  </div>
+
+  <div class="footer">
+    <a href="mailto:happyojh@gmail.com">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+        <path d="m2 7 10 6 10-6"></path>
+      </svg>
+      문의
+    </a>
   </div>
 </div>
 
