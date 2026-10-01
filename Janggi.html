@@ -701,7 +701,7 @@ function think(board, side, level) {
     document.getElementById('undoBtn').disabled = !canUndo;
     document.getElementById('undoBtn2').disabled = !canUndo;
 
-    if (gameOver) {
+    if (gameOver && showOverlay) {
       document.getElementById('winnerText').innerHTML = winnerLabel();
       overlay.hidden = false;
     } else overlay.hidden = true;
@@ -741,10 +741,16 @@ function think(board, side, level) {
     }
   }
 
+  // 마지막 수를 판 위에서 확인할 수 있도록 결과 창은 잠시 뒤에 띄움
+  var OVERLAY_DELAY = 2000, showOverlay = false, overlayTimer = null;
+
   function endGame(w) {
     gameOver = true;
     winner = w;
     thinking = false;
+    showOverlay = false;
+    clearTimeout(overlayTimer);
+    overlayTimer = setTimeout(function () { showOverlay = true; render(); }, OVERLAY_DELAY);
     render();
   }
 
@@ -793,6 +799,8 @@ function think(board, side, level) {
   }
 
   function cancelAI() {
+    clearTimeout(overlayTimer);
+    showOverlay = false;
     searchId++;
     thinking = false;
     if (pending && worker) { worker.terminate(); worker = makeWorker(); }
