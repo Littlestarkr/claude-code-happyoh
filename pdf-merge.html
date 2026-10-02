@@ -70,6 +70,10 @@
   }
   .filelist li .order{display:flex; flex-direction:column; gap:2px; flex-shrink:0;}
   .filelist li .order button{color:var(--sub); font-size:.9rem; line-height:1;}
+  .filelist li .thumb{
+    width:40px; height:52px; object-fit:cover; border-radius:4px; flex-shrink:0;
+    background:var(--card); border:1px solid var(--border);
+  }
   .btn{
     width:100%; padding:13px; border:none; border-radius:10px; font-size:1rem; font-weight:700;
     background:var(--accent); color:#fff; cursor:pointer; margin-top:16px;
@@ -1412,7 +1416,7 @@ rotateSaveBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- 이미지 -> PDF ----------
-let imgFiles = [];
+let imgFiles = []; // each entry: {file, canvas, thumbUrl}
 const imgDrop = document.getElementById('img-drop');
 const imgInput = document.getElementById('img-input');
 const imgList = document.getElementById('img-list');
@@ -1425,11 +1429,67 @@ const imgHint = document.getElementById('img-hint');
 imgDrop.addEventListener('drop', e=>addImgFiles(e.dataTransfer.files));
 imgInput.addEventListener('change', e=>{addImgFiles(e.target.files); imgInput.value='';});
 
+// 사진의 EXIF 방향 정보를 반영해 "보이는 그대로"의 픽셀로 캔버스에 그려줌 (pdf-lib은 EXIF를 읽지 않기 때문)
+async function fileToOrientedCanvas(file){
+  if(typeof createImageBitmap === 'function'){
+    try{
+      const bitmap = await createImageBitmap(file, {imageOrientation:'from-image'});
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width; canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0);
+      if(bitmap.close) bitmap.close();
+      return canvas;
+    }catch(e){ console.error('createImageBitmap 실패, <img> 방식으로 대체', e); }
+  }
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((resolve, reject)=>{
+      const im = new Image();
+      im.onload = ()=>resolve(im);
+      im.onerror = reject;
+      im.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function loadImageEntryThumb(entry){
+  try{
+    const canvas = await fileToOrientedCanvas(entry.file);
+    entry.canvas = canvas;
+    const maxDim = 120;
+    const scale = Math.min(maxDim / canvas.width, maxDim / canvas.height, 1);
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = Math.max(1, Math.round(canvas.width * scale));
+    thumbCanvas.height = Math.max(1, Math.round(canvas.height * scale));
+    thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+    entry.thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+  }catch(e){ console.error('img thumb', e); }
+  renderImgList();
+}
+
 function addImgFiles(fileList){
+  const added = [];
   Array.from(fileList).forEach(f=>{
-    if(/^image\/(jpeg|png)$/.test(f.type) || /\.(jpe?g|png)$/i.test(f.name)) imgFiles.push(f);
+    if(/^image\/(jpeg|png)$/.test(f.type) || /\.(jpe?g|png)$/i.test(f.name)){
+      const entry = { file: f, canvas: null, thumbUrl: null };
+      imgFiles.push(entry);
+      added.push(entry);
+    }
   });
   renderImgList();
+  added.forEach(entry=>loadImageEntryThumb(entry));
 }
 function renderImgList(){
   imgList.innerHTML = '';
@@ -1442,15 +1502,19 @@ function renderImgList(){
   } else {
     nameRow.style.display = 'none';
   }
-  imgFiles.forEach((f,i)=>{
+  imgFiles.forEach((entry,i)=>{
     const li = document.createElement('li');
+    const thumbHtml = entry.thumbUrl
+      ? `<img class="thumb" src="${entry.thumbUrl}" alt="">`
+      : `<div class="thumb"></div>`;
     li.innerHTML = `
       <div class="order">
         <button data-act="up" data-i="${i}" ${i===0?'disabled':''}>▲</button>
         <button data-act="down" data-i="${i}" ${i===imgFiles.length-1?'disabled':''}>▼</button>
       </div>
-      <span class="name">${f.name}</span>
-      <span class="size">${fmtSize(f.size)}</span>
+      ${thumbHtml}
+      <span class="name">${entry.file.name}</span>
+      <span class="size">${fmtSize(entry.file.size)}</span>
       <button data-act="del" data-i="${i}">✕</button>`;
     imgList.appendChild(li);
   });
@@ -1475,10 +1539,11 @@ imgBtn.addEventListener('click', async ()=>{
   try{
     const outDoc = await PDFDocument.create();
     const A4_W = 595.28, A4_H = 841.89;
-    for(const f of imgFiles){
-      const bytes = await f.arrayBuffer();
-      const isPng = f.type === 'image/png' || /\.png$/i.test(f.name);
-      const img = isPng ? await outDoc.embedPng(bytes) : await outDoc.embedJpg(bytes);
+    for(const entry of imgFiles){
+      const canvas = entry.canvas || await fileToOrientedCanvas(entry.file);
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const img = await outDoc.embedJpg(bytes);
       const page = outDoc.addPage([A4_W, A4_H]);
       const scale = Math.min(A4_W / img.width, A4_H / img.height);
       const w = img.width * scale, h = img.height * scale;
