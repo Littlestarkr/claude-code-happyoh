@@ -279,6 +279,7 @@
         <input type="file" id="insert-base-input" accept="application/pdf">
       </label>
       <p class="hint" id="insert-base-filename"></p>
+      <div class="page-grid" id="insert-base-grid"></div>
 
       <div id="insert-body" style="display:none; margin-top:16px;">
         <label class="drop" id="insert-add-drop" for="insert-add-input">
@@ -286,16 +287,17 @@
           <input type="file" id="insert-add-input" accept="application/pdf">
         </label>
         <p class="hint" id="insert-add-filename"></p>
+        <div class="page-grid" id="insert-add-grid"></div>
 
         <div id="insert-pos-ui" style="display:none; margin-top:16px;">
-          <p class="hint">추가할 위치를 선택하세요.</p>
+          <p class="hint">추가할 위치를 선택하세요. "특정 페이지 뒤"를 고른 뒤 위 기준 PDF 썸네일을 탭하면 그 페이지 뒤로 바로 지정돼요.</p>
           <div class="mode-toggle">
             <button class="on" data-pos="start">맨 앞</button>
             <button data-pos="end">맨 뒤</button>
             <button data-pos="after">특정 페이지 뒤</button>
           </div>
           <div class="range-row" id="insert-after-row" style="display:none; margin-top:12px;">
-            <input type="text" id="insert-after-num" placeholder="예: 3 (기준 PDF 3번째 페이지 뒤에 추가)">
+            <input type="text" id="insert-after-num" placeholder="예: 3 (기준 PDF 3번째 페이지 뒤에 추가, 또는 위 썸네일 탭)">
           </div>
           <button class="btn secondary" id="insert-apply-btn">페이지 추가 적용</button>
           <div class="status" id="insert-apply-status"></div>
@@ -1029,10 +1031,12 @@ let insertCombinedOrder = null;
 const insertBaseDrop = document.getElementById('insert-base-drop');
 const insertBaseInput = document.getElementById('insert-base-input');
 const insertBaseFilenameEl = document.getElementById('insert-base-filename');
+const insertBaseGrid = document.getElementById('insert-base-grid');
 const insertBody = document.getElementById('insert-body');
 const insertAddDrop = document.getElementById('insert-add-drop');
 const insertAddInput = document.getElementById('insert-add-input');
 const insertAddFilenameEl = document.getElementById('insert-add-filename');
+const insertAddGrid = document.getElementById('insert-add-grid');
 const insertPosUi = document.getElementById('insert-pos-ui');
 const insertAfterRow = document.getElementById('insert-after-row');
 const insertAfterNum = document.getElementById('insert-after-num');
@@ -1060,6 +1064,50 @@ function resetInsertPreview(){
   setStatus(insertApplyStatus, '');
 }
 
+function buildPageGridChips(gridEl, count){
+  gridEl.innerHTML = '';
+  for(let i=1;i<=count;i++){
+    const chip = document.createElement('div');
+    chip.className = 'page-chip';
+    chip.dataset.p = i;
+    chip.innerHTML = `<span class="num">${i}</span>`;
+    gridEl.appendChild(chip);
+  }
+}
+
+async function renderGridThumbnails(gridEl, pdfjsDoc, count){
+  if(!pdfjsDoc) return;
+  const chips = gridEl.querySelectorAll('.page-chip');
+  for(let i=0;i<count;i++){
+    try{
+      const page = await pdfjsDoc.getPage(i+1);
+      const vp1 = page.getViewport({scale:1});
+      const scale = 170 / vp1.width;
+      const viewport = page.getViewport({scale});
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({canvasContext: ctx, viewport}).promise;
+      if(chips[i] && chips[i].isConnected) chips[i].insertBefore(canvas, chips[i].firstChild);
+    }catch(e){ console.error('thumb', i+1, e); }
+  }
+}
+
+function selectInsertAfterPage(n){
+  if(insertPos !== 'after'){
+    document.querySelectorAll('#insert-pos-ui .mode-toggle button').forEach(b=>b.classList.remove('on'));
+    document.querySelector('#insert-pos-ui .mode-toggle button[data-pos="after"]').classList.add('on');
+    insertPos = 'after';
+    insertAfterRow.style.display = 'flex';
+  }
+  insertAfterNum.value = n;
+  insertBaseGrid.querySelectorAll('.page-chip').forEach(c=>{
+    c.classList.toggle('sel', parseInt(c.dataset.p) === n);
+  });
+  resetInsertPreview();
+}
+
 async function loadInsertBase(file){
   setStatus(insertStatus, '');
   resetInsertPreview();
@@ -1072,12 +1120,14 @@ async function loadInsertBase(file){
     insertBaseFilenameEl.textContent = `${file.name} · 총 ${insertBasePageCount}쪽`;
     if(!insertFilenameInput.dataset.touched) insertFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_added';
     insertBody.style.display = 'block';
+    buildPageGridChips(insertBaseGrid, insertBasePageCount);
 
     insertBasePdfjsDoc = null;
     try{
       if (typeof pdfjsLib !== 'undefined' && !window.__pdfjsFailed) {
         const buf2 = await file.arrayBuffer();
         insertBasePdfjsDoc = await pdfjsLib.getDocument({data: buf2}).promise;
+        renderGridThumbnails(insertBaseGrid, insertBasePdfjsDoc, insertBasePageCount);
       }
     }catch(e){ console.error('pdfjs load', e); insertBasePdfjsDoc = null; }
   }catch(err){
@@ -1097,12 +1147,14 @@ async function loadInsertAdd(file){
     insertAddPageCount = insertAddDoc.getPageCount();
     insertAddFilenameEl.textContent = `${file.name} · 총 ${insertAddPageCount}쪽`;
     insertPosUi.style.display = 'block';
+    buildPageGridChips(insertAddGrid, insertAddPageCount);
 
     insertAddPdfjsDoc = null;
     try{
       if (typeof pdfjsLib !== 'undefined' && !window.__pdfjsFailed) {
         const buf2 = await file.arrayBuffer();
         insertAddPdfjsDoc = await pdfjsLib.getDocument({data: buf2}).promise;
+        renderGridThumbnails(insertAddGrid, insertAddPdfjsDoc, insertAddPageCount);
       }
     }catch(e){ console.error('pdfjs load', e); insertAddPdfjsDoc = null; }
   }catch(err){
@@ -1111,14 +1163,28 @@ async function loadInsertAdd(file){
   }
 }
 
+insertBaseGrid.addEventListener('click', e=>{
+  const chip = e.target.closest('.page-chip'); if(!chip) return;
+  selectInsertAfterPage(parseInt(chip.dataset.p));
+});
+
 document.querySelectorAll('#insert-pos-ui .mode-toggle button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('#insert-pos-ui .mode-toggle button').forEach(b=>b.classList.remove('on'));
     btn.classList.add('on');
     insertPos = btn.dataset.pos;
     insertAfterRow.style.display = insertPos === 'after' ? 'flex' : 'none';
+    if(insertPos !== 'after') insertBaseGrid.querySelectorAll('.page-chip.sel').forEach(c=>c.classList.remove('sel'));
     resetInsertPreview();
   });
+});
+
+insertAfterNum.addEventListener('input', e=>{
+  const n = parseInt(e.target.value);
+  insertBaseGrid.querySelectorAll('.page-chip').forEach(c=>{
+    c.classList.toggle('sel', n && parseInt(c.dataset.p) === n);
+  });
+  resetInsertPreview();
 });
 
 insertFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
