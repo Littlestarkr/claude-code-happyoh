@@ -60,9 +60,10 @@
   }
   .filelist{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:8px;}
   .filelist li{
-    display:flex; align-items:center; gap:10px; background:var(--bg);
-    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:.9rem;
+    display:flex; align-items:center; flex-wrap:wrap; gap:10px; background:var(--bg);
+    border:2px solid var(--border); border-radius:10px; padding:10px 12px; font-size:.9rem;
   }
+  .filelist li.sel{border-color:var(--accent); background:rgba(37,99,235,.08);}
   .filelist li .name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .filelist li .size{color:var(--sub); font-size:.8rem; flex-shrink:0;}
   .filelist li button{
@@ -73,6 +74,21 @@
   .filelist li .thumb{
     width:40px; height:52px; object-fit:cover; border-radius:4px; flex-shrink:0;
     background:var(--card); border:1px solid var(--border);
+  }
+  .filelist li .img-group-thumbs{display:flex; gap:3px; flex-shrink:0;}
+  .filelist li .img-group-thumbs img{
+    width:26px; height:34px; object-fit:cover; border-radius:3px; border:1px solid var(--border);
+  }
+  .filelist li .ungroup-btn{
+    border:none; background:none; color:var(--accent); font-weight:700; font-size:.78rem;
+    cursor:pointer; flex-shrink:0; padding:2px 6px;
+  }
+  .filelist li .caption-row{
+    flex-basis:100%; order:9; display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;
+  }
+  .filelist li .caption-row input{
+    flex:1; min-width:120px; padding:7px 9px; border-radius:6px; border:1px solid var(--border);
+    background:var(--card); color:var(--text); font-size:.8rem;
   }
   .btn{
     width:100%; padding:13px; border:none; border-radius:10px; font-size:1rem; font-weight:700;
@@ -351,13 +367,16 @@
         <input type="file" id="img-input" accept="image/jpeg,image/png" multiple>
       </label>
       <ul class="filelist" id="img-list"></ul>
-      <p class="hint" id="img-hint" style="display:none;">화살표로 순서를 바꿀 수 있어요. PDF 페이지 순서가 됩니다.</p>
+      <p class="hint" id="img-hint" style="display:none;">화살표로 순서를 바꿀 수 있어요. 이미지를 탭해서 여러 장을 선택하면 한 페이지로 묶을 수 있어요(세로 사진은 1장, 가로 사진은 2~3장을 묶는 식으로 사용하세요).</p>
+      <button class="btn secondary" id="img-group-btn" style="display:none;">선택한 이미지를 한 페이지로 묶기</button>
+      <div class="status" id="img-group-status"></div>
+
       <div class="range-row" id="img-name-row" style="display:none; margin-top:12px;">
         <input type="text" id="img-filename" placeholder="저장할 파일 이름">
       </div>
       <button class="btn" id="img-btn" disabled>이미지를 PDF로 만들기</button>
       <div class="status" id="img-status"></div>
-      <p class="hint">JPG·PNG 파일만 지원해요. 각 이미지는 A4 용지 안에 꽉 차게 배치됩니다.</p>
+      <p class="hint">JPG·PNG 파일만 지원해요. 묶지 않은 이미지는 한 장씩 A4 페이지에 꽉 차게, 묶은 이미지는 한 페이지 안에 위아래로 나눠 배치돼요. 각 페이지 위/아래에 짧은 설명 글(한글 가능)도 선택적으로 넣을 수 있어요 — 처음 한 번 한글 글꼴을 추가로 내려받아요.</p>
     </div>
   </div>
 
@@ -1416,13 +1435,22 @@ rotateSaveBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- 이미지 -> PDF ----------
-let imgFiles = []; // each entry: {file, canvas, thumbUrl}
+// imgPageItems의 각 항목은 PDF 한 페이지에 대응:
+//  - kind 'single': {id, kind, file, canvas, thumbUrl, aboveText, belowText}  (이미지 1장)
+//  - kind 'group' : {id, kind, images:[{file,canvas,thumbUrl}], aboveText, belowText}  (묶인 여러 장)
+let imgPageItems = [];
+let imgSelected = new Set(); // 묶기 전 선택된 'single' 항목의 id
+let imgIdSeq = 0;
+let cachedKoreanFontBytes = null;
+
 const imgDrop = document.getElementById('img-drop');
 const imgInput = document.getElementById('img-input');
 const imgList = document.getElementById('img-list');
 const imgBtn = document.getElementById('img-btn');
 const imgStatus = document.getElementById('img-status');
 const imgHint = document.getElementById('img-hint');
+const imgGroupBtn = document.getElementById('img-group-btn');
+const imgGroupStatus = document.getElementById('img-group-status');
 
 ['dragenter','dragover'].forEach(ev=>imgDrop.addEventListener(ev, e=>{e.preventDefault(); imgDrop.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>imgDrop.addEventListener(ev, e=>{e.preventDefault(); imgDrop.classList.remove('drag');}));
@@ -1483,53 +1511,154 @@ function addImgFiles(fileList){
   const added = [];
   Array.from(fileList).forEach(f=>{
     if(/^image\/(jpeg|png)$/.test(f.type) || /\.(jpe?g|png)$/i.test(f.name)){
-      const entry = { file: f, canvas: null, thumbUrl: null };
-      imgFiles.push(entry);
+      const entry = { id:'img'+(++imgIdSeq), kind:'single', file:f, canvas:null, thumbUrl:null, aboveText:'', belowText:'' };
+      imgPageItems.push(entry);
       added.push(entry);
     }
   });
   renderImgList();
   added.forEach(entry=>loadImageEntryThumb(entry));
 }
+
+function escapeAttr(str){
+  return (str||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+}
+
 function renderImgList(){
   imgList.innerHTML = '';
-  imgHint.style.display = imgFiles.length > 1 ? 'block' : 'none';
+  imgHint.style.display = imgPageItems.length > 1 ? 'block' : 'none';
   const nameRow = document.getElementById('img-name-row');
   const nameInput = document.getElementById('img-filename');
-  if(imgFiles.length > 0){
+  if(imgPageItems.length > 0){
     nameRow.style.display = 'flex';
     if(!nameInput.dataset.touched) nameInput.value = 'images';
   } else {
     nameRow.style.display = 'none';
   }
-  imgFiles.forEach((entry,i)=>{
+  imgPageItems.forEach((item,i)=>{
     const li = document.createElement('li');
-    const thumbHtml = entry.thumbUrl
-      ? `<img class="thumb" src="${entry.thumbUrl}" alt="">`
-      : `<div class="thumb"></div>`;
-    li.innerHTML = `
+    li.className = 'imgitem' + (item.kind === 'group' ? ' imggroup' : '') + (item.kind === 'single' && imgSelected.has(item.id) ? ' sel' : '');
+    li.dataset.id = item.id;
+    const orderHtml = `
       <div class="order">
         <button data-act="up" data-i="${i}" ${i===0?'disabled':''}>▲</button>
-        <button data-act="down" data-i="${i}" ${i===imgFiles.length-1?'disabled':''}>▼</button>
-      </div>
-      ${thumbHtml}
-      <span class="name">${entry.file.name}</span>
-      <span class="size">${fmtSize(entry.file.size)}</span>
-      <button data-act="del" data-i="${i}">✕</button>`;
+        <button data-act="down" data-i="${i}" ${i===imgPageItems.length-1?'disabled':''}>▼</button>
+      </div>`;
+    let mainHtml, nameHtml, extraBtn = '';
+    if(item.kind === 'group'){
+      mainHtml = `<div class="img-group-thumbs">${item.images.map(im=>`<img src="${im.thumbUrl||''}" alt="">`).join('')}</div>`;
+      nameHtml = `<span class="name">페이지 묶음 (${item.images.length}장)</span>`;
+      extraBtn = `<button class="ungroup-btn" data-id="${item.id}">그룹 해제</button>`;
+    } else {
+      mainHtml = item.thumbUrl ? `<img class="thumb" src="${item.thumbUrl}" alt="">` : `<div class="thumb"></div>`;
+      nameHtml = `<span class="name">${item.file.name}</span><span class="size">${fmtSize(item.file.size)}</span>`;
+    }
+    li.innerHTML = `
+      ${orderHtml}
+      ${mainHtml}
+      ${nameHtml}
+      ${extraBtn}
+      <button data-act="del" data-i="${i}">✕</button>
+      <div class="caption-row">
+        <input type="text" class="cap-above" data-i="${i}" placeholder="위쪽 텍스트 (선택)" value="${escapeAttr(item.aboveText)}">
+        <input type="text" class="cap-below" data-i="${i}" placeholder="아래쪽 텍스트 (선택)" value="${escapeAttr(item.belowText)}">
+      </div>`;
     imgList.appendChild(li);
   });
-  imgBtn.disabled = imgFiles.length < 1;
+  imgBtn.disabled = imgPageItems.length < 1;
+  imgGroupBtn.style.display = imgSelected.size >= 2 ? 'block' : 'none';
   setStatus(imgStatus, '');
 }
+
+function groupSelectedImages(){
+  if(imgSelected.size < 2){ setStatus(imgGroupStatus, '2장 이상 선택하세요.', 'err'); return; }
+  const indices = Array.from(imgSelected)
+    .map(id => imgPageItems.findIndex(it=>it.id===id))
+    .filter(i=>i>=0)
+    .sort((a,b)=>a-b);
+  if(indices.length < 2) return;
+  const firstIdx = indices[0];
+  const items = indices.map(i=>imgPageItems[i]);
+  for(let k=indices.length-1;k>=0;k--) imgPageItems.splice(indices[k],1);
+  const groupItem = {
+    id: 'grp'+(++imgIdSeq),
+    kind: 'group',
+    images: items.map(it=>({file:it.file, canvas:it.canvas, thumbUrl:it.thumbUrl})),
+    aboveText: '', belowText: ''
+  };
+  imgPageItems.splice(firstIdx, 0, groupItem);
+  imgSelected.clear();
+  setStatus(imgGroupStatus, '', '');
+  renderImgList();
+}
+imgGroupBtn.addEventListener('click', groupSelectedImages);
+
+function ungroupImageItem(groupId){
+  const idx = imgPageItems.findIndex(it=>it.id===groupId);
+  if(idx < 0) return;
+  const group = imgPageItems[idx];
+  const singles = group.images.map(im=>({
+    id:'img'+(++imgIdSeq), kind:'single', file:im.file, canvas:im.canvas, thumbUrl:im.thumbUrl, aboveText:'', belowText:''
+  }));
+  imgPageItems.splice(idx, 1, ...singles);
+  renderImgList();
+}
+
 imgList.addEventListener('click', e=>{
-  const btn = e.target.closest('button'); if(!btn) return;
-  const i = parseInt(btn.dataset.i);
-  if(btn.dataset.act === 'del') imgFiles.splice(i,1);
-  if(btn.dataset.act === 'up' && i>0) [imgFiles[i-1],imgFiles[i]]=[imgFiles[i],imgFiles[i-1]];
-  if(btn.dataset.act === 'down' && i<imgFiles.length-1) [imgFiles[i+1],imgFiles[i]]=[imgFiles[i],imgFiles[i+1]];
+  const btn = e.target.closest('button');
+  if(btn){
+    const i = parseInt(btn.dataset.i);
+    if(btn.dataset.act === 'del'){
+      const removed = imgPageItems[i];
+      if(removed) imgSelected.delete(removed.id);
+      imgPageItems.splice(i,1);
+      renderImgList();
+    } else if(btn.dataset.act === 'up' && i>0){
+      [imgPageItems[i-1],imgPageItems[i]]=[imgPageItems[i],imgPageItems[i-1]];
+      renderImgList();
+    } else if(btn.dataset.act === 'down' && i<imgPageItems.length-1){
+      [imgPageItems[i+1],imgPageItems[i]]=[imgPageItems[i],imgPageItems[i+1]];
+      renderImgList();
+    } else if(btn.classList.contains('ungroup-btn')){
+      ungroupImageItem(btn.dataset.id);
+    }
+    return;
+  }
+  if(e.target.closest('input')) return;
+  const li = e.target.closest('.imgitem'); if(!li) return;
+  if(li.classList.contains('imggroup')) return;
+  const id = li.dataset.id;
+  if(imgSelected.has(id)) imgSelected.delete(id); else imgSelected.add(id);
   renderImgList();
 });
+
+imgList.addEventListener('input', e=>{
+  const i = parseInt(e.target.dataset.i);
+  if(isNaN(i) || !imgPageItems[i]) return;
+  if(e.target.classList.contains('cap-above')) imgPageItems[i].aboveText = e.target.value;
+  if(e.target.classList.contains('cap-below')) imgPageItems[i].belowText = e.target.value;
+});
+
 document.getElementById('img-filename').addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+
+function loadScriptOnce(src){
+  return new Promise((resolve, reject)=>{
+    if(document.querySelector(`script[data-src="${src}"]`)){ resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src;
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('스크립트 로드 실패: '+src));
+    document.head.appendChild(s);
+  });
+}
+
+async function getKoreanFontBytes(){
+  if(cachedKoreanFontBytes) return cachedKoreanFontBytes;
+  const res = await fetch('https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.3.0/files/noto-sans-kr-korean-400-normal.woff2');
+  if(!res.ok) throw new Error('폰트 파일을 받지 못했어요.');
+  cachedKoreanFontBytes = await res.arrayBuffer();
+  return cachedKoreanFontBytes;
+}
 
 imgBtn.addEventListener('click', async ()=>{
   const PDFDocument = getPDFDocument();
@@ -1539,25 +1668,80 @@ imgBtn.addEventListener('click', async ()=>{
   try{
     const outDoc = await PDFDocument.create();
     const A4_W = 595.28, A4_H = 841.89;
-    for(const entry of imgFiles){
-      const canvas = entry.canvas || await fileToOrientedCanvas(entry.file);
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const img = await outDoc.embedJpg(bytes);
-      const page = outDoc.addPage([A4_W, A4_H]);
-      const scale = Math.min(A4_W / img.width, A4_H / img.height);
-      const w = img.width * scale, h = img.height * scale;
-      page.drawImage(img, { x: (A4_W - w)/2, y: (A4_H - h)/2, width: w, height: h });
+    const SIDE_MARGIN = 24;
+    const CAPTION_SIZE = 14;
+    const CAPTION_PAD = 10;
+
+    const hasCaption = imgPageItems.some(it => (it.aboveText||'').trim() || (it.belowText||'').trim());
+    let koreanFont = null;
+    if(hasCaption){
+      try{
+        await loadScriptOnce('https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js');
+        if(typeof fontkit === 'undefined') throw new Error('fontkit을 찾을 수 없어요.');
+        outDoc.registerFontkit(fontkit);
+        const fontBytes = await getKoreanFontBytes();
+        koreanFont = await outDoc.embedFont(fontBytes, {subset:true});
+      }catch(fontErr){
+        console.error('한글 폰트 로드 실패', fontErr);
+        koreanFont = null;
+      }
     }
+
+    for(const item of imgPageItems){
+      const images = item.kind === 'group' ? item.images : [item];
+      for(const im of images){
+        if(!im.canvas) im.canvas = await fileToOrientedCanvas(im.file);
+      }
+
+      const aboveText = (item.aboveText||'').trim();
+      const belowText = (item.belowText||'').trim();
+      let topMargin = SIDE_MARGIN;
+      let bottomMargin = SIDE_MARGIN;
+      if(aboveText && koreanFont) topMargin += CAPTION_SIZE + CAPTION_PAD;
+      if(belowText && koreanFont) bottomMargin += CAPTION_SIZE + CAPTION_PAD;
+
+      const page = outDoc.addPage([A4_W, A4_H]);
+      const n = images.length;
+      const availW = A4_W - SIDE_MARGIN*2;
+      const availH = A4_H - topMargin - bottomMargin;
+      const bandH = availH / n;
+
+      for(let i=0;i<n;i++){
+        const canvas = images[i].canvas;
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const img = await outDoc.embedJpg(bytes);
+        const scale = Math.min(availW / img.width, bandH / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        const bandTop = A4_H - topMargin - bandH*i;
+        const x = (A4_W - w) / 2;
+        const y = bandTop - bandH + (bandH - h) / 2;
+        page.drawImage(img, { x, y, width: w, height: h });
+      }
+
+      if(aboveText && koreanFont){
+        const tw = koreanFont.widthOfTextAtSize(aboveText, CAPTION_SIZE);
+        page.drawText(aboveText, { x: Math.max(SIDE_MARGIN, (A4_W - tw)/2), y: A4_H - SIDE_MARGIN - CAPTION_SIZE, size: CAPTION_SIZE, font: koreanFont, color: PDFLib.rgb(0,0,0) });
+      }
+      if(belowText && koreanFont){
+        const tw = koreanFont.widthOfTextAtSize(belowText, CAPTION_SIZE);
+        page.drawText(belowText, { x: Math.max(SIDE_MARGIN, (A4_W - tw)/2), y: SIDE_MARGIN, size: CAPTION_SIZE, font: koreanFont, color: PDFLib.rgb(0,0,0) });
+      }
+    }
+
     const outBytes = await outDoc.save();
     await downloadBlob(outBytes, toPdfName(document.getElementById('img-filename').value, 'images'));
-    setStatus(imgStatus, `완료! 이미지 ${imgFiles.length}장을 PDF로 만들었어요.`, 'ok');
+    if(hasCaption && !koreanFont){
+      setStatus(imgStatus, `완료했지만 한글 글꼴을 불러오지 못해 텍스트 없이 저장됐어요. 네트워크 확인 후 다시 시도해 주세요.`, '');
+    } else {
+      setStatus(imgStatus, `완료! 총 ${imgPageItems.length}쪽짜리 PDF를 만들었어요.`, 'ok');
+    }
   }catch(err){
     console.error(err);
     if(err && err.code === 'declined') setStatus(imgStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
     else setStatus(imgStatus, '만드는 중 오류가 발생했어요. JPG·PNG만 지원합니다.', 'err');
   }
-  imgBtn.disabled = imgFiles.length < 1;
+  imgBtn.disabled = imgPageItems.length < 1;
 });
 </script>
 </body>
