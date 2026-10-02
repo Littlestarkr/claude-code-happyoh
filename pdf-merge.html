@@ -222,12 +222,16 @@
       </label>
       <div id="delete-body" style="display:none;">
         <p class="hint" id="delete-filename"></p>
-        <p class="hint">삭제할 페이지를 탭해서 선택하세요.</p>
+        <p class="hint">삭제할 페이지를 탭해서 선택한 뒤 [적용]을 누르면 미리보기에 바로 반영돼요. 확인 후 저장하세요.</p>
         <div class="page-grid" id="delete-page-grid"></div>
-        <div class="range-row" style="margin-top:12px;">
+        <button class="btn secondary" id="delete-apply-btn" disabled>선택한 페이지 삭제 적용</button>
+        <div class="status" id="delete-apply-status"></div>
+
+        <hr style="margin:22px 0; border:none; border-top:1px solid var(--border);">
+        <div class="range-row">
           <input type="text" id="delete-filename-input" placeholder="저장할 파일 이름">
         </div>
-        <button class="btn" id="delete-btn" disabled>선택한 페이지 삭제하고 저장</button>
+        <button class="btn" id="delete-save-btn">저장</button>
         <div class="status" id="delete-status"></div>
       </div>
     </div>
@@ -293,10 +297,15 @@
           <div class="range-row" id="insert-after-row" style="display:none; margin-top:12px;">
             <input type="text" id="insert-after-num" placeholder="예: 3 (기준 PDF 3번째 페이지 뒤에 추가)">
           </div>
-          <div class="range-row" style="margin-top:12px;">
+          <button class="btn secondary" id="insert-apply-btn">페이지 추가 적용</button>
+          <div class="status" id="insert-apply-status"></div>
+          <div class="page-grid" id="insert-preview-grid"></div>
+
+          <hr style="margin:22px 0; border:none; border-top:1px solid var(--border);">
+          <div class="range-row">
             <input type="text" id="insert-filename" placeholder="저장할 파일 이름">
           </div>
-          <button class="btn" id="insert-btn">페이지 추가해서 저장</button>
+          <button class="btn" id="insert-save-btn" disabled>저장</button>
           <div class="status" id="insert-status"></div>
         </div>
       </div>
@@ -312,7 +321,7 @@
       </label>
       <div id="rotate-body" style="display:none;">
         <p class="hint" id="rotate-filename"></p>
-        <p class="hint">회전할 페이지를 탭해서 선택한 뒤 아래 버튼을 누르세요.</p>
+        <p class="hint">회전할 페이지를 탭해서 선택한 뒤 아래 버튼을 누르면 미리보기가 바로 회전돼요. 확인 후 저장하세요.</p>
         <div class="page-grid" id="rotate-page-grid"></div>
         <div class="btn-row">
           <button class="btn secondary" id="rotate-ccw-btn">↺ 왼쪽 90°</button>
@@ -322,7 +331,7 @@
         <div class="range-row" style="margin-top:12px;">
           <input type="text" id="rotate-filename-input" placeholder="저장할 파일 이름">
         </div>
-        <button class="btn" id="rotate-save-btn">회전 적용해서 저장</button>
+        <button class="btn" id="rotate-save-btn">저장</button>
         <div class="status" id="rotate-status"></div>
       </div>
     </div>
@@ -724,16 +733,20 @@ splitEachBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- 페이지 삭제 ----------
-let deleteFile = null, deleteDoc = null, deletePageCount = 0;
+let deleteFile = null, deleteDoc = null, deleteOriginalCount = 0;
+let deleteKeepOrder = [];
 let deleteSelected = new Set();
 let deletePdfjsDoc = null;
+let deleteThumbCanvas = {};
 
 const deleteDrop = document.getElementById('delete-drop');
 const deleteInput = document.getElementById('delete-input');
 const deleteBody = document.getElementById('delete-body');
 const deleteFilenameEl = document.getElementById('delete-filename');
 const deletePageGrid = document.getElementById('delete-page-grid');
-const deleteBtn = document.getElementById('delete-btn');
+const deleteApplyBtn = document.getElementById('delete-apply-btn');
+const deleteApplyStatus = document.getElementById('delete-apply-status');
+const deleteSaveBtn = document.getElementById('delete-save-btn');
 const deleteStatus = document.getElementById('delete-status');
 const deleteFilenameInput = document.getElementById('delete-filename-input');
 
@@ -744,19 +757,22 @@ deleteInput.addEventListener('change', e=>{ if(e.target.files[0]) loadDeleteFile
 
 async function loadDeleteFile(file){
   setStatus(deleteStatus, '');
+  setStatus(deleteApplyStatus, '');
   const PDFDocument = getPDFDocument();
   if(!PDFDocument){ setStatus(deleteStatus, '처리 엔진을 불러오지 못해 열 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
   try{
     const bytes = await file.arrayBuffer();
     deleteDoc = await PDFDocument.load(bytes, {ignoreEncryption:true});
-    deletePageCount = deleteDoc.getPageCount();
+    deleteOriginalCount = deleteDoc.getPageCount();
     deleteFile = file;
+    deleteKeepOrder = Array.from({length: deleteOriginalCount}, (_, i) => i + 1);
     deleteSelected = new Set();
-    deleteFilenameEl.textContent = `${file.name} · 총 ${deletePageCount}쪽`;
+    deleteThumbCanvas = {};
+    deleteFilenameEl.textContent = `${file.name} · 총 ${deleteOriginalCount}쪽`;
     if(!deleteFilenameInput.dataset.touched) deleteFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_edited';
-    renderDeletePageGrid();
+    renderDeleteGrid();
     deleteBody.style.display = 'block';
-    deleteBtn.disabled = true;
+    deleteApplyBtn.disabled = true;
 
     deletePdfjsDoc = null;
     try{
@@ -772,23 +788,24 @@ async function loadDeleteFile(file){
   }
 }
 
-function renderDeletePageGrid(){
+function renderDeleteGrid(){
   deletePageGrid.innerHTML = '';
-  for(let i=1;i<=deletePageCount;i++){
+  deleteKeepOrder.forEach((origNum, idx)=>{
     const chip = document.createElement('div');
-    chip.className = 'page-chip';
-    chip.dataset.p = i;
-    chip.innerHTML = `<span class="num">${i}</span>`;
+    chip.className = 'page-chip' + (deleteSelected.has(origNum) ? ' sel-del' : '');
+    chip.dataset.orig = origNum;
+    chip.innerHTML = `<span class="num">${idx + 1}</span>`;
+    const cached = deleteThumbCanvas[origNum];
+    if(cached) chip.insertBefore(cached, chip.firstChild);
     deletePageGrid.appendChild(chip);
-  }
+  });
 }
 
 async function renderDeleteThumbnails(){
   if(!deletePdfjsDoc) return;
-  const chips = deletePageGrid.querySelectorAll('.page-chip');
-  for(let i=0;i<chips.length;i++){
+  for(let origNum=1; origNum<=deleteOriginalCount; origNum++){
     try{
-      const page = await deletePdfjsDoc.getPage(i+1);
+      const page = await deletePdfjsDoc.getPage(origNum);
       const vp1 = page.getViewport({scale:1});
       const scale = 170 / vp1.width;
       const viewport = page.getViewport({scale});
@@ -797,43 +814,54 @@ async function renderDeleteThumbnails(){
       canvas.height = viewport.height;
       const ctx = canvas.getContext('2d');
       await page.render({canvasContext: ctx, viewport}).promise;
-      if(chips[i].isConnected) chips[i].insertBefore(canvas, chips[i].firstChild);
-    }catch(e){ console.error('thumb', i+1, e); }
+      deleteThumbCanvas[origNum] = canvas;
+      const chip = deletePageGrid.querySelector(`.page-chip[data-orig="${origNum}"]`);
+      if(chip && !chip.querySelector('canvas')) chip.insertBefore(canvas, chip.firstChild);
+    }catch(e){ console.error('thumb', origNum, e); }
   }
 }
 
 deletePageGrid.addEventListener('click', e=>{
   const chip = e.target.closest('.page-chip'); if(!chip) return;
-  const p = parseInt(chip.dataset.p);
-  if(deleteSelected.has(p)) deleteSelected.delete(p); else deleteSelected.add(p);
+  const origNum = parseInt(chip.dataset.orig);
+  if(deleteSelected.has(origNum)) deleteSelected.delete(origNum); else deleteSelected.add(origNum);
   chip.classList.toggle('sel-del');
-  deleteBtn.disabled = deleteSelected.size === 0 || deleteSelected.size >= deletePageCount;
+  deleteApplyBtn.disabled = deleteSelected.size === 0 || deleteSelected.size >= deleteKeepOrder.length;
 });
 
 deleteFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
 
-deleteBtn.addEventListener('click', async ()=>{
+deleteApplyBtn.addEventListener('click', ()=>{
+  if(deleteSelected.size === 0){ setStatus(deleteApplyStatus, '삭제할 페이지를 먼저 선택하세요.', 'err'); return; }
+  if(deleteSelected.size >= deleteKeepOrder.length){ setStatus(deleteApplyStatus, '모든 페이지를 삭제할 수는 없어요.', 'err'); return; }
+  const removed = deleteSelected.size;
+  deleteKeepOrder = deleteKeepOrder.filter(p => !deleteSelected.has(p));
+  deleteSelected.clear();
+  renderDeleteGrid();
+  deleteApplyBtn.disabled = true;
+  setStatus(deleteApplyStatus, `${removed}개 페이지 삭제를 반영했어요. (현재 ${deleteKeepOrder.length}쪽) 확인 후 저장하세요.`, 'ok');
+});
+
+deleteSaveBtn.addEventListener('click', async ()=>{
   const PDFDocument = getPDFDocument();
-  if(!PDFDocument){ setStatus(deleteStatus, '처리 엔진을 불러오지 못해 삭제할 수 없어요.', 'err'); return; }
-  if(deleteSelected.size === 0){ setStatus(deleteStatus, '삭제할 페이지를 먼저 선택하세요.', 'err'); return; }
-  if(deleteSelected.size >= deletePageCount){ setStatus(deleteStatus, '모든 페이지를 삭제할 수는 없어요.', 'err'); return; }
-  deleteBtn.disabled = true;
-  setStatus(deleteStatus, '삭제하는 중…');
+  if(!PDFDocument){ setStatus(deleteStatus, '처리 엔진을 불러오지 못해 저장할 수 없어요.', 'err'); return; }
+  if(!deleteDoc){ setStatus(deleteStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  deleteSaveBtn.disabled = true;
+  setStatus(deleteStatus, '저장하는 중…');
   try{
-    const keepIdx = [];
-    for(let i=0;i<deletePageCount;i++) if(!deleteSelected.has(i+1)) keepIdx.push(i);
     const outDoc = await PDFDocument.create();
-    const copied = await outDoc.copyPages(deleteDoc, keepIdx);
+    const idx = deleteKeepOrder.map(p => p - 1);
+    const copied = await outDoc.copyPages(deleteDoc, idx);
     copied.forEach(p=>outDoc.addPage(p));
     const bytes = await outDoc.save();
     await downloadBlob(bytes, toPdfName(deleteFilenameInput.value, 'edited'));
-    setStatus(deleteStatus, `완료! ${deleteSelected.size}개 페이지를 삭제했어요.`, 'ok');
+    setStatus(deleteStatus, `완료! 총 ${deleteKeepOrder.length}쪽으로 저장했어요.`, 'ok');
   }catch(err){
     console.error(err);
     if(err && err.code === 'declined') setStatus(deleteStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
     else setStatus(deleteStatus, '처리 중 오류가 발생했어요.', 'err');
   }
-  deleteBtn.disabled = deleteSelected.size === 0 || deleteSelected.size >= deletePageCount;
+  deleteSaveBtn.disabled = false;
 });
 
 // ---------- 페이지 이동 ----------
@@ -993,9 +1021,10 @@ moveSaveBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- 페이지 추가 ----------
-let insertBaseDoc = null, insertBasePageCount = 0;
-let insertAddDoc = null, insertAddPageCount = 0;
+let insertBaseDoc = null, insertBasePageCount = 0, insertBasePdfjsDoc = null;
+let insertAddDoc = null, insertAddPageCount = 0, insertAddPdfjsDoc = null;
 let insertPos = 'start';
+let insertCombinedOrder = null;
 
 const insertBaseDrop = document.getElementById('insert-base-drop');
 const insertBaseInput = document.getElementById('insert-base-input');
@@ -1007,7 +1036,10 @@ const insertAddFilenameEl = document.getElementById('insert-add-filename');
 const insertPosUi = document.getElementById('insert-pos-ui');
 const insertAfterRow = document.getElementById('insert-after-row');
 const insertAfterNum = document.getElementById('insert-after-num');
-const insertBtn = document.getElementById('insert-btn');
+const insertApplyBtn = document.getElementById('insert-apply-btn');
+const insertApplyStatus = document.getElementById('insert-apply-status');
+const insertPreviewGrid = document.getElementById('insert-preview-grid');
+const insertSaveBtn = document.getElementById('insert-save-btn');
 const insertStatus = document.getElementById('insert-status');
 const insertFilenameInput = document.getElementById('insert-filename');
 
@@ -1021,8 +1053,16 @@ insertBaseInput.addEventListener('change', e=>{ if(e.target.files[0]) loadInsert
 insertAddDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadInsertAdd(e.dataTransfer.files[0]); });
 insertAddInput.addEventListener('change', e=>{ if(e.target.files[0]) loadInsertAdd(e.target.files[0]); insertAddInput.value=''; });
 
+function resetInsertPreview(){
+  insertCombinedOrder = null;
+  insertPreviewGrid.innerHTML = '';
+  insertSaveBtn.disabled = true;
+  setStatus(insertApplyStatus, '');
+}
+
 async function loadInsertBase(file){
   setStatus(insertStatus, '');
+  resetInsertPreview();
   const PDFDocument = getPDFDocument();
   if(!PDFDocument){ setStatus(insertStatus, '처리 엔진을 불러오지 못해 열 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
   try{
@@ -1032,6 +1072,14 @@ async function loadInsertBase(file){
     insertBaseFilenameEl.textContent = `${file.name} · 총 ${insertBasePageCount}쪽`;
     if(!insertFilenameInput.dataset.touched) insertFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_added';
     insertBody.style.display = 'block';
+
+    insertBasePdfjsDoc = null;
+    try{
+      if (typeof pdfjsLib !== 'undefined' && !window.__pdfjsFailed) {
+        const buf2 = await file.arrayBuffer();
+        insertBasePdfjsDoc = await pdfjsLib.getDocument({data: buf2}).promise;
+      }
+    }catch(e){ console.error('pdfjs load', e); insertBasePdfjsDoc = null; }
   }catch(err){
     console.error(err);
     setStatus(insertStatus, '기준 PDF를 여는 중 오류가 발생했어요. 비밀번호로 보호된 파일은 지원하지 않습니다.', 'err');
@@ -1040,6 +1088,7 @@ async function loadInsertBase(file){
 
 async function loadInsertAdd(file){
   setStatus(insertStatus, '');
+  resetInsertPreview();
   const PDFDocument = getPDFDocument();
   if(!PDFDocument){ setStatus(insertStatus, '처리 엔진을 불러오지 못해 열 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
   try{
@@ -1048,6 +1097,14 @@ async function loadInsertAdd(file){
     insertAddPageCount = insertAddDoc.getPageCount();
     insertAddFilenameEl.textContent = `${file.name} · 총 ${insertAddPageCount}쪽`;
     insertPosUi.style.display = 'block';
+
+    insertAddPdfjsDoc = null;
+    try{
+      if (typeof pdfjsLib !== 'undefined' && !window.__pdfjsFailed) {
+        const buf2 = await file.arrayBuffer();
+        insertAddPdfjsDoc = await pdfjsLib.getDocument({data: buf2}).promise;
+      }
+    }catch(e){ console.error('pdfjs load', e); insertAddPdfjsDoc = null; }
   }catch(err){
     console.error(err);
     setStatus(insertStatus, '추가할 PDF를 여는 중 오류가 발생했어요. 비밀번호로 보호된 파일은 지원하지 않습니다.', 'err');
@@ -1060,41 +1117,88 @@ document.querySelectorAll('#insert-pos-ui .mode-toggle button').forEach(btn=>{
     btn.classList.add('on');
     insertPos = btn.dataset.pos;
     insertAfterRow.style.display = insertPos === 'after' ? 'flex' : 'none';
+    resetInsertPreview();
   });
 });
 
 insertFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
 
-insertBtn.addEventListener('click', async ()=>{
-  const PDFDocument = getPDFDocument();
-  if(!PDFDocument){ setStatus(insertStatus, '처리 엔진을 불러오지 못해 추가할 수 없어요.', 'err'); return; }
-  if(!insertBaseDoc || !insertAddDoc){ setStatus(insertStatus, '기준 PDF와 추가할 PDF를 모두 선택하세요.', 'err'); return; }
+function renderInsertPreviewGrid(order){
+  insertPreviewGrid.innerHTML = '';
+  order.forEach((item, idx)=>{
+    const chip = document.createElement('div');
+    chip.className = 'page-chip';
+    chip.innerHTML = `<span class="num">${idx + 1}</span>`;
+    insertPreviewGrid.appendChild(chip);
+  });
+}
+
+async function renderInsertPreviewThumbnails(order){
+  const chips = insertPreviewGrid.querySelectorAll('.page-chip');
+  for(let i=0;i<order.length;i++){
+    const item = order[i];
+    const srcDoc = item.src === 'base' ? insertBasePdfjsDoc : insertAddPdfjsDoc;
+    if(!srcDoc || !chips[i]) continue;
+    try{
+      const page = await srcDoc.getPage(item.idx);
+      const vp1 = page.getViewport({scale:1});
+      const scale = 170 / vp1.width;
+      const viewport = page.getViewport({scale});
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({canvasContext: ctx, viewport}).promise;
+      if(chips[i].isConnected) chips[i].insertBefore(canvas, chips[i].firstChild);
+    }catch(e){ console.error('insert thumb', i, e); }
+  }
+}
+
+insertApplyBtn.addEventListener('click', ()=>{
+  if(!insertBaseDoc || !insertAddDoc){ setStatus(insertApplyStatus, '기준 PDF와 추가할 PDF를 모두 선택하세요.', 'err'); return; }
   let afterIdx = insertBasePageCount;
   if(insertPos === 'start') afterIdx = 0;
   else if(insertPos === 'end') afterIdx = insertBasePageCount;
   else if(insertPos === 'after'){
     const n = parseInt(insertAfterNum.value);
-    if(!n || n < 1 || n > insertBasePageCount){ setStatus(insertStatus, `1~${insertBasePageCount} 사이의 페이지 번호를 입력하세요.`, 'err'); return; }
+    if(!n || n < 1 || n > insertBasePageCount){ setStatus(insertApplyStatus, `1~${insertBasePageCount} 사이의 페이지 번호를 입력하세요.`, 'err'); return; }
     afterIdx = n;
   }
-  insertBtn.disabled = true;
-  setStatus(insertStatus, '추가하는 중…');
+  const baseItems = Array.from({length: insertBasePageCount}, (_, i) => ({src:'base', idx:i+1}));
+  const addItems = Array.from({length: insertAddPageCount}, (_, i) => ({src:'add', idx:i+1}));
+  insertCombinedOrder = [...baseItems.slice(0, afterIdx), ...addItems, ...baseItems.slice(afterIdx)];
+  renderInsertPreviewGrid(insertCombinedOrder);
+  renderInsertPreviewThumbnails(insertCombinedOrder);
+  insertSaveBtn.disabled = false;
+  setStatus(insertApplyStatus, `적용했어요. 총 ${insertCombinedOrder.length}쪽이 됩니다. 확인 후 저장하세요.`, 'ok');
+});
+
+insertSaveBtn.addEventListener('click', async ()=>{
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(insertStatus, '처리 엔진을 불러오지 못해 저장할 수 없어요.', 'err'); return; }
+  if(!insertCombinedOrder){ setStatus(insertStatus, '먼저 [페이지 추가 적용] 버튼을 눌러주세요.', 'err'); return; }
+  insertSaveBtn.disabled = true;
+  setStatus(insertStatus, '저장하는 중…');
   try{
     const outDoc = await PDFDocument.create();
-    const basePages = await outDoc.copyPages(insertBaseDoc, insertBaseDoc.getPageIndices());
-    const addPages = await outDoc.copyPages(insertAddDoc, insertAddDoc.getPageIndices());
-    basePages.slice(0, afterIdx).forEach(p=>outDoc.addPage(p));
-    addPages.forEach(p=>outDoc.addPage(p));
-    basePages.slice(afterIdx).forEach(p=>outDoc.addPage(p));
+    const baseIdxList = insertCombinedOrder.filter(it=>it.src==='base').map(it=>it.idx-1);
+    const addIdxList = insertCombinedOrder.filter(it=>it.src==='add').map(it=>it.idx-1);
+    const basePages = await outDoc.copyPages(insertBaseDoc, baseIdxList);
+    const addPages = await outDoc.copyPages(insertAddDoc, addIdxList);
+    let bi = 0, ai = 0;
+    insertCombinedOrder.forEach(item=>{
+      if(item.src === 'base') outDoc.addPage(basePages[bi++]);
+      else outDoc.addPage(addPages[ai++]);
+    });
     const bytes = await outDoc.save();
     await downloadBlob(bytes, toPdfName(insertFilenameInput.value, 'added'));
-    setStatus(insertStatus, `완료! ${insertAddPageCount}쪽을 추가했어요.`, 'ok');
+    setStatus(insertStatus, `완료! 총 ${insertCombinedOrder.length}쪽으로 저장했어요.`, 'ok');
   }catch(err){
     console.error(err);
     if(err && err.code === 'declined') setStatus(insertStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
     else setStatus(insertStatus, '처리 중 오류가 발생했어요.', 'err');
   }
-  insertBtn.disabled = false;
+  insertSaveBtn.disabled = false;
 });
 
 // ---------- 페이지 회전 ----------
@@ -1176,6 +1280,11 @@ async function renderRotateThumbnails(){
       canvas.height = viewport.height;
       const ctx = canvas.getContext('2d');
       await page.render({canvasContext: ctx, viewport}).promise;
+      const p = i+1;
+      if(rotateState[p]){
+        canvas.style.transition = 'transform .2s';
+        canvas.style.transform = `rotate(${rotateState[p]}deg)`;
+      }
       if(chips[i].isConnected) chips[i].insertBefore(canvas, chips[i].firstChild);
     }catch(e){ console.error('thumb', i+1, e); }
   }
@@ -1192,10 +1301,18 @@ function applyRotateDelta(delta){
   if(rotateSelected.size === 0){ setStatus(rotateStatus, '먼저 회전할 페이지를 선택하세요.', 'err'); return; }
   rotateSelected.forEach(p=>{
     rotateState[p] = ((rotateState[p] + delta) % 360 + 360) % 360;
-    const numEl = rotatePageGrid.querySelector(`.page-chip[data-p="${p}"] .num`);
-    if(numEl) numEl.textContent = rotateState[p] ? `${p} · ${rotateState[p]}°` : `${p}`;
+    const chip = rotatePageGrid.querySelector(`.page-chip[data-p="${p}"]`);
+    if(chip){
+      const numEl = chip.querySelector('.num');
+      if(numEl) numEl.textContent = rotateState[p] ? `${p} · ${rotateState[p]}°` : `${p}`;
+      const canvas = chip.querySelector('canvas');
+      if(canvas){
+        canvas.style.transition = 'transform .2s';
+        canvas.style.transform = `rotate(${rotateState[p]}deg)`;
+      }
+    }
   });
-  setStatus(rotateStatus, '', '');
+  setStatus(rotateStatus, `${rotateSelected.size}개 페이지에 회전을 적용했어요. 확인 후 저장하세요.`, 'ok');
 }
 document.getElementById('rotate-cw-btn').addEventListener('click', ()=>applyRotateDelta(90));
 document.getElementById('rotate-ccw-btn').addEventListener('click', ()=>applyRotateDelta(270));
