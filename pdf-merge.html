@@ -75,10 +75,11 @@
     width:40px; height:52px; object-fit:cover; border-radius:4px; flex-shrink:0;
     background:var(--card); border:1px solid var(--border);
   }
-  .filelist li .img-group-thumbs{display:flex; gap:3px; flex-shrink:0;}
-  .filelist li .img-group-thumbs img{
-    width:26px; height:34px; object-fit:cover; border-radius:3px; border:1px solid var(--border);
+  .filelist li .img-group-list{
+    flex-basis:100%; order:9; display:flex; flex-direction:column; gap:8px; margin-top:6px;
   }
+  .filelist li .img-group-member{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .filelist li .img-group-member .caption-row{order:0; margin-top:0; flex:1; min-width:180px;}
   .filelist li .ungroup-btn{
     border:none; background:none; color:var(--accent); font-weight:700; font-size:.78rem;
     cursor:pointer; flex-shrink:0; padding:2px 6px;
@@ -1544,25 +1545,34 @@ function renderImgList(){
         <button data-act="up" data-i="${i}" ${i===0?'disabled':''}>▲</button>
         <button data-act="down" data-i="${i}" ${i===imgPageItems.length-1?'disabled':''}>▼</button>
       </div>`;
-    let mainHtml, nameHtml, extraBtn = '';
     if(item.kind === 'group'){
-      mainHtml = `<div class="img-group-thumbs">${item.images.map(im=>`<img src="${im.thumbUrl||''}" alt="">`).join('')}</div>`;
-      nameHtml = `<span class="name">페이지 묶음 (${item.images.length}장)</span>`;
-      extraBtn = `<button class="ungroup-btn" data-id="${item.id}">그룹 해제</button>`;
+      const membersHtml = item.images.map((im, gi) => `
+        <div class="img-group-member">
+          ${im.thumbUrl ? `<img class="thumb" src="${im.thumbUrl}" alt="">` : `<div class="thumb"></div>`}
+          <div class="caption-row">
+            <input type="text" class="cap-above" data-i="${i}" data-gi="${gi}" placeholder="위쪽 텍스트 (선택)" value="${escapeAttr(im.aboveText)}">
+            <input type="text" class="cap-below" data-i="${i}" data-gi="${gi}" placeholder="아래쪽 텍스트 (선택)" value="${escapeAttr(im.belowText)}">
+          </div>
+        </div>`).join('');
+      li.innerHTML = `
+        ${orderHtml}
+        <span class="name">페이지 묶음 (${item.images.length}장) · 사진마다 따로 텍스트를 넣을 수 있어요</span>
+        <button class="ungroup-btn" data-id="${item.id}">그룹 해제</button>
+        <button data-act="del" data-i="${i}">✕</button>
+        <div class="img-group-list">${membersHtml}</div>`;
     } else {
-      mainHtml = item.thumbUrl ? `<img class="thumb" src="${item.thumbUrl}" alt="">` : `<div class="thumb"></div>`;
-      nameHtml = `<span class="name">${item.file.name}</span><span class="size">${fmtSize(item.file.size)}</span>`;
+      const thumbHtml = item.thumbUrl ? `<img class="thumb" src="${item.thumbUrl}" alt="">` : `<div class="thumb"></div>`;
+      li.innerHTML = `
+        ${orderHtml}
+        ${thumbHtml}
+        <span class="name">${item.file.name}</span>
+        <span class="size">${fmtSize(item.file.size)}</span>
+        <button data-act="del" data-i="${i}">✕</button>
+        <div class="caption-row">
+          <input type="text" class="cap-above" data-i="${i}" placeholder="위쪽 텍스트 (선택)" value="${escapeAttr(item.aboveText)}">
+          <input type="text" class="cap-below" data-i="${i}" placeholder="아래쪽 텍스트 (선택)" value="${escapeAttr(item.belowText)}">
+        </div>`;
     }
-    li.innerHTML = `
-      ${orderHtml}
-      ${mainHtml}
-      ${nameHtml}
-      ${extraBtn}
-      <button data-act="del" data-i="${i}">✕</button>
-      <div class="caption-row">
-        <input type="text" class="cap-above" data-i="${i}" placeholder="위쪽 텍스트 (선택)" value="${escapeAttr(item.aboveText)}">
-        <input type="text" class="cap-below" data-i="${i}" placeholder="아래쪽 텍스트 (선택)" value="${escapeAttr(item.belowText)}">
-      </div>`;
     imgList.appendChild(li);
   });
   imgBtn.disabled = imgPageItems.length < 1;
@@ -1583,8 +1593,7 @@ function groupSelectedImages(){
   const groupItem = {
     id: 'grp'+(++imgIdSeq),
     kind: 'group',
-    images: items.map(it=>({file:it.file, canvas:it.canvas, thumbUrl:it.thumbUrl})),
-    aboveText: '', belowText: ''
+    images: items.map(it=>({file:it.file, canvas:it.canvas, thumbUrl:it.thumbUrl, aboveText: it.aboveText||'', belowText: it.belowText||''}))
   };
   imgPageItems.splice(firstIdx, 0, groupItem);
   imgSelected.clear();
@@ -1598,7 +1607,7 @@ function ungroupImageItem(groupId){
   if(idx < 0) return;
   const group = imgPageItems[idx];
   const singles = group.images.map(im=>({
-    id:'img'+(++imgIdSeq), kind:'single', file:im.file, canvas:im.canvas, thumbUrl:im.thumbUrl, aboveText:'', belowText:''
+    id:'img'+(++imgIdSeq), kind:'single', file:im.file, canvas:im.canvas, thumbUrl:im.thumbUrl, aboveText: im.aboveText||'', belowText: im.belowText||''
   }));
   imgPageItems.splice(idx, 1, ...singles);
   renderImgList();
@@ -1635,8 +1644,15 @@ imgList.addEventListener('click', e=>{
 imgList.addEventListener('input', e=>{
   const i = parseInt(e.target.dataset.i);
   if(isNaN(i) || !imgPageItems[i]) return;
-  if(e.target.classList.contains('cap-above')) imgPageItems[i].aboveText = e.target.value;
-  if(e.target.classList.contains('cap-below')) imgPageItems[i].belowText = e.target.value;
+  const item = imgPageItems[i];
+  let target = item;
+  if(item.kind === 'group' && e.target.dataset.gi !== undefined){
+    const gi = parseInt(e.target.dataset.gi);
+    if(isNaN(gi) || !item.images[gi]) return;
+    target = item.images[gi];
+  }
+  if(e.target.classList.contains('cap-above')) target.aboveText = e.target.value;
+  if(e.target.classList.contains('cap-below')) target.belowText = e.target.value;
 });
 
 document.getElementById('img-filename').addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
@@ -1654,7 +1670,7 @@ function loadScriptOnce(src){
 
 async function getKoreanFontBytes(){
   if(cachedKoreanFontBytes) return cachedKoreanFontBytes;
-  const res = await fetch('noto-sans-kr-korean-400-normal.woff2');
+  const res = await fetch('noto-sans-kr-korean-400.ttf');
   if(!res.ok) throw new Error('폰트 파일을 받지 못했어요.');
   cachedKoreanFontBytes = await res.arrayBuffer();
   return cachedKoreanFontBytes;
@@ -1672,17 +1688,24 @@ imgBtn.addEventListener('click', async ()=>{
     const CAPTION_SIZE = 14;
     const CAPTION_PAD = 10;
 
-    const hasCaption = imgPageItems.some(it => (it.aboveText||'').trim() || (it.belowText||'').trim());
+    const GAP = 16;
+
+    const hasCaption = imgPageItems.some(it => {
+      const imgs = it.kind === 'group' ? it.images : [it];
+      return imgs.some(im => (im.aboveText||'').trim() || (im.belowText||'').trim());
+    });
     let koreanFont = null;
+    let fontErrMsg = '';
     if(hasCaption){
       try{
         await loadScriptOnce('fontkit.umd.min.js');
-        if(typeof fontkit === 'undefined') throw new Error('fontkit을 찾을 수 없어요.');
+        if(typeof fontkit === 'undefined') throw new Error('fontkit 전역 변수를 찾을 수 없어요.');
         outDoc.registerFontkit(fontkit);
         const fontBytes = await getKoreanFontBytes();
         koreanFont = await outDoc.embedFont(fontBytes, {subset:true});
       }catch(fontErr){
         console.error('한글 폰트 로드 실패', fontErr);
+        fontErrMsg = (fontErr && fontErr.message) ? fontErr.message : String(fontErr);
         koreanFont = null;
       }
     }
@@ -1693,46 +1716,49 @@ imgBtn.addEventListener('click', async ()=>{
         if(!im.canvas) im.canvas = await fileToOrientedCanvas(im.file);
       }
 
-      const aboveText = (item.aboveText||'').trim();
-      const belowText = (item.belowText||'').trim();
-      let topMargin = SIDE_MARGIN;
-      let bottomMargin = SIDE_MARGIN;
-      if(aboveText && koreanFont) topMargin += CAPTION_SIZE + CAPTION_PAD;
-      if(belowText && koreanFont) bottomMargin += CAPTION_SIZE + CAPTION_PAD;
-
       const page = outDoc.addPage([A4_W, A4_H]);
       const n = images.length;
       const availW = A4_W - SIDE_MARGIN*2;
-      const availH = A4_H - topMargin - bottomMargin;
-      const bandH = availH / n;
+      const totalGap = GAP * (n - 1);
+      const slotH = (A4_H - SIDE_MARGIN*2 - totalGap) / n;
 
       for(let i=0;i<n;i++){
-        const canvas = images[i].canvas;
+        const im = images[i];
+        const aboveText = (im.aboveText||'').trim();
+        const belowText = (im.belowText||'').trim();
+        const capAboveH = (aboveText && koreanFont) ? CAPTION_SIZE + CAPTION_PAD : 0;
+        const capBelowH = (belowText && koreanFont) ? CAPTION_SIZE + CAPTION_PAD : 0;
+        const imgAreaH = slotH - capAboveH - capBelowH;
+
+        const slotTop = A4_H - SIDE_MARGIN - (slotH + GAP) * i;
+        const slotBottom = slotTop - slotH;
+
+        const canvas = im.canvas;
         const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const img = await outDoc.embedJpg(bytes);
-        const scale = Math.min(availW / img.width, bandH / img.height);
+        const scale = Math.min(availW / img.width, imgAreaH / img.height);
         const w = img.width * scale, h = img.height * scale;
-        const bandTop = A4_H - topMargin - bandH*i;
+        const imgAreaTop = slotTop - capAboveH;
         const x = (A4_W - w) / 2;
-        const y = bandTop - bandH + (bandH - h) / 2;
+        const y = imgAreaTop - imgAreaH + (imgAreaH - h) / 2;
         page.drawImage(img, { x, y, width: w, height: h });
-      }
 
-      if(aboveText && koreanFont){
-        const tw = koreanFont.widthOfTextAtSize(aboveText, CAPTION_SIZE);
-        page.drawText(aboveText, { x: Math.max(SIDE_MARGIN, (A4_W - tw)/2), y: A4_H - SIDE_MARGIN - CAPTION_SIZE, size: CAPTION_SIZE, font: koreanFont, color: PDFLib.rgb(0,0,0) });
-      }
-      if(belowText && koreanFont){
-        const tw = koreanFont.widthOfTextAtSize(belowText, CAPTION_SIZE);
-        page.drawText(belowText, { x: Math.max(SIDE_MARGIN, (A4_W - tw)/2), y: SIDE_MARGIN, size: CAPTION_SIZE, font: koreanFont, color: PDFLib.rgb(0,0,0) });
+        if(aboveText && koreanFont){
+          const tw = koreanFont.widthOfTextAtSize(aboveText, CAPTION_SIZE);
+          page.drawText(aboveText, { x: Math.max(SIDE_MARGIN, (A4_W - tw)/2), y: slotTop - CAPTION_SIZE, size: CAPTION_SIZE, font: koreanFont, color: PDFLib.rgb(0,0,0) });
+        }
+        if(belowText && koreanFont){
+          const tw = koreanFont.widthOfTextAtSize(belowText, CAPTION_SIZE);
+          page.drawText(belowText, { x: Math.max(SIDE_MARGIN, (A4_W - tw)/2), y: slotBottom, size: CAPTION_SIZE, font: koreanFont, color: PDFLib.rgb(0,0,0) });
+        }
       }
     }
 
     const outBytes = await outDoc.save();
     await downloadBlob(outBytes, toPdfName(document.getElementById('img-filename').value, 'images'));
     if(hasCaption && !koreanFont){
-      setStatus(imgStatus, `완료했지만 한글 글꼴을 불러오지 못해 텍스트 없이 저장됐어요. 새로고침 후 다시 시도해 주세요.`, 'err');
+      setStatus(imgStatus, `완료했지만 한글 글꼴을 불러오지 못해 텍스트 없이 저장됐어요: ${fontErrMsg}`, 'err');
     } else {
       setStatus(imgStatus, `완료! 총 ${imgPageItems.length}쪽짜리 PDF를 만들었어요.`, 'ok');
     }
