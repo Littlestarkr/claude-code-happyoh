@@ -153,6 +153,7 @@
     <div class="tab active" data-tab="merge">합치기</div>
     <div class="tab" data-tab="split">분할</div>
     <div class="tab" data-tab="delete">페이지 삭제</div>
+    <div class="tab" data-tab="move">페이지 이동</div>
     <div class="tab" data-tab="insert">페이지 추가</div>
     <div class="tab" data-tab="rotate">페이지 회전</div>
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
@@ -228,6 +229,40 @@
         </div>
         <button class="btn" id="delete-btn" disabled>선택한 페이지 삭제하고 저장</button>
         <div class="status" id="delete-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 페이지 이동 -->
+  <div class="panel" id="panel-move">
+    <div class="card">
+      <label class="drop" id="move-drop" for="move-input">
+        페이지 순서를 바꿀 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+        <input type="file" id="move-input" accept="application/pdf">
+      </label>
+      <div id="move-body" style="display:none;">
+        <p class="hint" id="move-filename"></p>
+        <p class="hint">이동할 페이지를 하나 이상 탭해서 선택하세요. 번호는 현재 순서 기준이라 이동할 때마다 바뀝니다.</p>
+        <div class="page-grid" id="move-page-grid"></div>
+
+        <p class="hint" style="margin-top:16px;">이동할 위치를 선택하세요.</p>
+        <div class="mode-toggle">
+          <button class="on" data-pos="start">맨 앞</button>
+          <button data-pos="end">맨 뒤</button>
+          <button data-pos="after">특정 페이지 뒤</button>
+        </div>
+        <div class="range-row" id="move-after-row" style="display:none;">
+          <input type="text" id="move-after-num" placeholder="예: 3 (현재 3번째 페이지 뒤로 이동, 선택한 페이지 제외)">
+        </div>
+        <button class="btn secondary" id="move-apply-btn">선택한 페이지 이동 적용</button>
+        <div class="status" id="move-apply-status"></div>
+
+        <hr style="margin:22px 0; border:none; border-top:1px solid var(--border);">
+        <div class="range-row">
+          <input type="text" id="move-filename-input" placeholder="저장할 파일 이름">
+        </div>
+        <button class="btn" id="move-save-btn">변경된 순서로 저장</button>
+        <div class="status" id="move-status"></div>
       </div>
     </div>
   </div>
@@ -799,6 +834,162 @@ deleteBtn.addEventListener('click', async ()=>{
     else setStatus(deleteStatus, '처리 중 오류가 발생했어요.', 'err');
   }
   deleteBtn.disabled = deleteSelected.size === 0 || deleteSelected.size >= deletePageCount;
+});
+
+// ---------- 페이지 이동 ----------
+let moveDoc = null, movePageCount = 0;
+let moveOrder = [];
+let moveSelected = new Set();
+let moveTargetPos = 'start';
+let movePdfjsDoc = null;
+let moveThumbCanvas = {};
+
+const moveDrop = document.getElementById('move-drop');
+const moveInput = document.getElementById('move-input');
+const moveBody = document.getElementById('move-body');
+const moveFilenameEl = document.getElementById('move-filename');
+const movePageGrid = document.getElementById('move-page-grid');
+const moveAfterRow = document.getElementById('move-after-row');
+const moveAfterNum = document.getElementById('move-after-num');
+const moveApplyBtn = document.getElementById('move-apply-btn');
+const moveApplyStatus = document.getElementById('move-apply-status');
+const moveSaveBtn = document.getElementById('move-save-btn');
+const moveStatus = document.getElementById('move-status');
+const moveFilenameInput = document.getElementById('move-filename-input');
+
+['dragenter','dragover'].forEach(ev=>moveDrop.addEventListener(ev, e=>{e.preventDefault(); moveDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>moveDrop.addEventListener(ev, e=>{e.preventDefault(); moveDrop.classList.remove('drag');}));
+moveDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadMoveFile(e.dataTransfer.files[0]); });
+moveInput.addEventListener('change', e=>{ if(e.target.files[0]) loadMoveFile(e.target.files[0]); moveInput.value=''; });
+
+async function loadMoveFile(file){
+  setStatus(moveStatus, '');
+  setStatus(moveApplyStatus, '');
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(moveStatus, '처리 엔진을 불러오지 못해 열 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
+  try{
+    const bytes = await file.arrayBuffer();
+    moveDoc = await PDFDocument.load(bytes, {ignoreEncryption:true});
+    movePageCount = moveDoc.getPageCount();
+    moveOrder = Array.from({length: movePageCount}, (_, i) => i + 1);
+    moveSelected = new Set();
+    moveThumbCanvas = {};
+    moveFilenameEl.textContent = `${file.name} · 총 ${movePageCount}쪽`;
+    if(!moveFilenameInput.dataset.touched) moveFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_reordered';
+    renderMoveGrid();
+    moveBody.style.display = 'block';
+
+    movePdfjsDoc = null;
+    try{
+      if (typeof pdfjsLib !== 'undefined' && !window.__pdfjsFailed) {
+        const buf2 = await file.arrayBuffer();
+        movePdfjsDoc = await pdfjsLib.getDocument({data: buf2}).promise;
+        renderMoveThumbnails();
+      }
+    }catch(e){ console.error('pdfjs load', e); movePdfjsDoc = null; }
+  }catch(err){
+    console.error(err);
+    setStatus(moveStatus, 'PDF를 여는 중 오류가 발생했어요. 비밀번호로 보호된 파일은 지원하지 않습니다.', 'err');
+  }
+}
+
+function renderMoveGrid(){
+  movePageGrid.innerHTML = '';
+  moveOrder.forEach((origNum, idx)=>{
+    const pos = idx + 1;
+    const chip = document.createElement('div');
+    chip.className = 'page-chip' + (moveSelected.has(origNum) ? ' sel' : '');
+    chip.dataset.orig = origNum;
+    chip.innerHTML = `<span class="num">${pos}</span>`;
+    const cached = moveThumbCanvas[origNum];
+    if(cached) chip.insertBefore(cached, chip.firstChild);
+    movePageGrid.appendChild(chip);
+  });
+}
+
+async function renderMoveThumbnails(){
+  if(!movePdfjsDoc) return;
+  for(let origNum=1; origNum<=movePageCount; origNum++){
+    try{
+      const page = await movePdfjsDoc.getPage(origNum);
+      const vp1 = page.getViewport({scale:1});
+      const scale = 170 / vp1.width;
+      const viewport = page.getViewport({scale});
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({canvasContext: ctx, viewport}).promise;
+      moveThumbCanvas[origNum] = canvas;
+      const chip = movePageGrid.querySelector(`.page-chip[data-orig="${origNum}"]`);
+      if(chip && !chip.querySelector('canvas')) chip.insertBefore(canvas, chip.firstChild);
+    }catch(e){ console.error('thumb', origNum, e); }
+  }
+}
+
+movePageGrid.addEventListener('click', e=>{
+  const chip = e.target.closest('.page-chip'); if(!chip) return;
+  const origNum = parseInt(chip.dataset.orig);
+  if(moveSelected.has(origNum)) moveSelected.delete(origNum); else moveSelected.add(origNum);
+  chip.classList.toggle('sel');
+});
+
+document.querySelectorAll('#panel-move .mode-toggle button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#panel-move .mode-toggle button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    moveTargetPos = btn.dataset.pos;
+    moveAfterRow.style.display = moveTargetPos === 'after' ? 'flex' : 'none';
+  });
+});
+
+moveApplyBtn.addEventListener('click', ()=>{
+  if(moveSelected.size === 0){ setStatus(moveApplyStatus, '먼저 이동할 페이지를 선택하세요.', 'err'); return; }
+  if(moveSelected.size >= moveOrder.length){ setStatus(moveApplyStatus, '모든 페이지를 선택하면 이동할 수 없어요.', 'err'); return; }
+
+  const movedGroup = moveOrder.filter(p => moveSelected.has(p));
+  const remaining = moveOrder.filter(p => !moveSelected.has(p));
+  let insertIdx;
+  if(moveTargetPos === 'start'){
+    insertIdx = 0;
+  } else if(moveTargetPos === 'end'){
+    insertIdx = remaining.length;
+  } else {
+    const n = parseInt(moveAfterNum.value);
+    if(!n || n < 1 || n > moveOrder.length){ setStatus(moveApplyStatus, `1~${moveOrder.length} 사이의 현재 페이지 번호를 입력하세요.`, 'err'); return; }
+    const anchorOrig = moveOrder[n-1];
+    if(moveSelected.has(anchorOrig)){ setStatus(moveApplyStatus, '이동 대상으로 선택하지 않은 페이지 번호를 입력하세요.', 'err'); return; }
+    insertIdx = remaining.indexOf(anchorOrig) + 1;
+  }
+  moveOrder = [...remaining.slice(0, insertIdx), ...movedGroup, ...remaining.slice(insertIdx)];
+  moveSelected.clear();
+  moveAfterNum.value = '';
+  renderMoveGrid();
+  setStatus(moveApplyStatus, '이동을 적용했어요. 더 이동하거나 아래 버튼으로 저장하세요.', 'ok');
+});
+
+moveFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+
+moveSaveBtn.addEventListener('click', async ()=>{
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(moveStatus, '처리 엔진을 불러오지 못해 저장할 수 없어요.', 'err'); return; }
+  if(!moveDoc){ setStatus(moveStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  moveSaveBtn.disabled = true;
+  setStatus(moveStatus, '저장하는 중…');
+  try{
+    const outDoc = await PDFDocument.create();
+    const idx = moveOrder.map(p => p - 1);
+    const copied = await outDoc.copyPages(moveDoc, idx);
+    copied.forEach(p=>outDoc.addPage(p));
+    const bytes = await outDoc.save();
+    await downloadBlob(bytes, toPdfName(moveFilenameInput.value, 'reordered'));
+    setStatus(moveStatus, '완료! 변경된 순서로 저장했어요.', 'ok');
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(moveStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else setStatus(moveStatus, '처리 중 오류가 발생했어요.', 'err');
+  }
+  moveSaveBtn.disabled = false;
 });
 
 // ---------- 페이지 추가 ----------
