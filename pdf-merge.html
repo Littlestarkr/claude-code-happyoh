@@ -178,6 +178,7 @@
     <div class="tab" data-tab="insert">페이지 추가</div>
     <div class="tab" data-tab="rotate">페이지 회전</div>
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
+    <div class="tab" data-tab="password">암호넣기</div>
   </div>
 
   <!-- 합치기 -->
@@ -378,6 +379,53 @@
       <button class="btn" id="img-btn" disabled>이미지를 PDF로 만들기</button>
       <div class="status" id="img-status"></div>
       <p class="hint">JPG·PNG 파일만 지원해요. 묶지 않은 이미지는 한 장씩 A4 페이지에 꽉 차게, 묶은 이미지는 한 페이지 안에 위아래로 나눠 배치돼요. 각 페이지 위/아래에 짧은 설명 글(한글 가능)도 선택적으로 넣을 수 있어요 — 처음 한 번 한글 글꼴을 추가로 내려받아요.</p>
+    </div>
+  </div>
+
+  <!-- 암호 넣기/해제 -->
+  <div class="panel" id="panel-password">
+    <div class="card">
+      <div class="mode-toggle">
+        <button id="pw-mode-encrypt" class="on">암호 넣기</button>
+        <button id="pw-mode-decrypt">암호 해제</button>
+      </div>
+
+      <div id="pw-encrypt-ui">
+        <label class="drop" id="pw-enc-drop" for="pw-enc-input">
+          암호를 설정할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+          <input type="file" id="pw-enc-input" accept="application/pdf">
+        </label>
+        <p class="hint" id="pw-enc-filename"></p>
+        <div class="range-row">
+          <input type="password" id="pw-enc-pass1" placeholder="설정할 비밀번호" autocomplete="new-password">
+        </div>
+        <div class="range-row">
+          <input type="password" id="pw-enc-pass2" placeholder="비밀번호 확인" autocomplete="new-password">
+        </div>
+        <div class="range-row">
+          <input type="text" id="pw-enc-filename-input" placeholder="저장할 파일 이름">
+        </div>
+        <button class="btn" id="pw-enc-btn" disabled>암호 설정하기</button>
+        <div class="status" id="pw-enc-status"></div>
+        <p class="hint">PDF를 열 때 입력해야 하는 비밀번호를 설정해요(128비트 RC4 방식). 영문·숫자 비밀번호가 다른 프로그램에서도 호환성이 가장 좋아요.</p>
+      </div>
+
+      <div id="pw-decrypt-ui" style="display:none;">
+        <label class="drop" id="pw-dec-drop" for="pw-dec-input">
+          암호를 해제할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+          <input type="file" id="pw-dec-input" accept="application/pdf">
+        </label>
+        <p class="hint" id="pw-dec-filename"></p>
+        <div class="range-row">
+          <input type="password" id="pw-dec-pass" placeholder="현재 비밀번호" autocomplete="current-password">
+        </div>
+        <div class="range-row">
+          <input type="text" id="pw-dec-filename-input" placeholder="저장할 파일 이름">
+        </div>
+        <button class="btn" id="pw-dec-btn" disabled>암호 해제하기</button>
+        <div class="status" id="pw-dec-status"></div>
+        <p class="hint">이 도구로 암호를 설정한 파일이나, 비교적 단순한(RC4) 암호 방식의 PDF를 지원해요. 최신 고급 암호화(AES)나 특수한 압축 구조를 쓰는 파일은 해제하지 못할 수 있어요.</p>
+      </div>
     </div>
   </div>
 
@@ -1768,6 +1816,425 @@ imgBtn.addEventListener('click', async ()=>{
     else setStatus(imgStatus, '만드는 중 오류가 발생했어요. JPG·PNG만 지원합니다.', 'err');
   }
   imgBtn.disabled = imgPageItems.length < 1;
+});
+
+// ---------- PDF 표준 암호(RC4 128비트) 직접 구현 ----------
+// pdf-lib은 PDF 암호화/복호화를 지원하지 않으므로, PDF 표준 보안 핸들러(RC4 128bit, Revision 3)를
+// 순수 JS(MD5 + RC4)로 직접 구현해 pdf-lib의 저수준 객체 API에 끼워넣는다.
+function md5(bytes){
+  function toWords(input){
+    const n = input.length;
+    const totalLenBits = n * 8;
+    const paddedLen = (((n + 8) >> 6) + 1) * 64;
+    const padded = new Uint8Array(paddedLen);
+    padded.set(input);
+    padded[n] = 0x80;
+    const dv = new DataView(padded.buffer);
+    const bitLenLow = totalLenBits >>> 0;
+    const bitLenHigh = Math.floor(totalLenBits / 0x100000000) >>> 0;
+    dv.setUint32(paddedLen - 8, bitLenLow, true);
+    dv.setUint32(paddedLen - 4, bitLenHigh, true);
+    const words = new Int32Array(paddedLen / 4);
+    for(let i=0;i<words.length;i++) words[i] = dv.getInt32(i*4, true);
+    return words;
+  }
+  function rotl(x,c){ return (x<<c)|(x>>>(32-c)); }
+  const S = [
+    7,12,17,22, 7,12,17,22, 7,12,17,22, 7,12,17,22,
+    5, 9,14,20, 5, 9,14,20, 5, 9,14,20, 5, 9,14,20,
+    4,11,16,23, 4,11,16,23, 4,11,16,23, 4,11,16,23,
+    6,10,15,21, 6,10,15,21, 6,10,15,21, 6,10,15,21
+  ];
+  const K = new Int32Array([
+    -680876936,-389564586,606105819,-1044525330,-176418897,1200080426,-1473231341,-45705983,
+    1770035416,-1958414417,-42063,-1990404162,1804603682,-40341101,-1502002290,1236535329,
+    -165796510,-1069501632,643717713,-373897302,-701558691,38016083,-660478335,-405537848,
+    568446438,-1019803690,-187363961,1163531501,-1444681467,-51403784,1735328473,-1926607734,
+    -378558,-2022574463,1839030562,-35309556,-1530992060,1272893353,-155497632,-1094730640,
+    681279174,-358537222,-722521979,76029189,-640364487,-421815835,530742520,-995338651,
+    -198630844,1126891415,-1416354905,-57434055,1700485571,-1894986606,-1051523,-2054922799,
+    1873313359,-30611744,-1560198380,1309151649,-145523070,-1120210379,718787259,-343485551
+  ]);
+  const words = toWords(bytes);
+  let a0=0x67452301, b0=0xefcdab89|0, c0=0x98badcfe|0, d0=0x10325476;
+  for(let chunk=0; chunk<words.length; chunk+=16){
+    let A=a0,B=b0,C=c0,D=d0;
+    for(let i=0;i<64;i++){
+      let F,g;
+      if(i<16){ F=(B&C)|((~B)&D); g=i; }
+      else if(i<32){ F=(D&B)|((~D)&C); g=(5*i+1)%16; }
+      else if(i<48){ F=B^C^D; g=(3*i+5)%16; }
+      else { F=C^(B|(~D)); g=(7*i)%16; }
+      F = (F + A + K[i] + words[chunk+g]) | 0;
+      A=D; D=C; C=B;
+      B = (B + rotl(F, S[i])) | 0;
+    }
+    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
+  }
+  const out = new Uint8Array(16);
+  const dv = new DataView(out.buffer);
+  dv.setInt32(0, a0, true); dv.setInt32(4, b0, true); dv.setInt32(8, c0, true); dv.setInt32(12, d0, true);
+  return out;
+}
+function rc4(key, data){
+  const S = new Uint8Array(256);
+  for(let i=0;i<256;i++) S[i]=i;
+  let j=0;
+  for(let i=0;i<256;i++){
+    j = (j + S[i] + key[i % key.length]) & 0xff;
+    const t=S[i]; S[i]=S[j]; S[j]=t;
+  }
+  const out = new Uint8Array(data.length);
+  let i=0; j=0;
+  for(let k=0;k<data.length;k++){
+    i=(i+1)&0xff;
+    j=(j+S[i])&0xff;
+    const t=S[i]; S[i]=S[j]; S[j]=t;
+    out[k] = data[k] ^ S[(S[i]+S[j])&0xff];
+  }
+  return out;
+}
+const PDF_PAD = new Uint8Array([
+  0x28,0xBF,0x4E,0x5E,0x4E,0x75,0x8A,0x41,0x64,0x00,0x4E,0x56,0xFF,0xFA,0x01,0x08,
+  0x2E,0x2E,0x00,0xB6,0xD0,0x68,0x3E,0x80,0x2F,0x0C,0xA9,0xFE,0x64,0x53,0x69,0x7A
+]);
+function padPasswordBytes(bytes){
+  const out = new Uint8Array(32);
+  const n = Math.min(bytes.length, 32);
+  out.set(bytes.subarray(0,n));
+  out.set(PDF_PAD.subarray(0, 32-n), n);
+  return out;
+}
+function int32LEBytes(n){
+  return new Uint8Array([n&0xff, (n>>>8)&0xff, (n>>>16)&0xff, (n>>>24)&0xff]);
+}
+function concatBytes(...arrs){
+  let len=0; for(const a of arrs) len+=a.length;
+  const out = new Uint8Array(len);
+  let off=0; for(const a of arrs){ out.set(a, off); off+=a.length; }
+  return out;
+}
+function bytesToHex(bytes){
+  let s='';
+  for(let i=0;i<bytes.length;i++) s += bytes[i].toString(16).padStart(2,'0');
+  return s.toUpperCase();
+}
+function bytesEqual(a,b,len){
+  const n = len !== undefined ? len : Math.max(a.length,b.length);
+  for(let i=0;i<n;i++) if((a[i]||0) !== (b[i]||0)) return false;
+  return true;
+}
+function randomBytes(n){
+  const b = new Uint8Array(n);
+  crypto.getRandomValues(b);
+  return b;
+}
+// Algorithm 2: 파일 암호화 키 계산 (Revision 3 이상 전제)
+function computeEncryptionKey(passwordBytes, oBytes, pValue, idBytes, keyLenBytes){
+  const padded = padPasswordBytes(passwordBytes);
+  let digest = md5(concatBytes(padded, oBytes, int32LEBytes(pValue), idBytes));
+  for(let i=0;i<50;i++) digest = md5(digest.subarray(0, keyLenBytes));
+  return digest.subarray(0, keyLenBytes).slice();
+}
+// Algorithm 3: O 값 계산
+function computeO(ownerPasswordBytes, userPasswordBytes, keyLenBytes){
+  let digest = md5(padPasswordBytes(ownerPasswordBytes));
+  for(let i=0;i<50;i++) digest = md5(digest.subarray(0, keyLenBytes));
+  const rc4Key = digest.subarray(0, keyLenBytes).slice();
+  let encrypted = rc4(rc4Key, padPasswordBytes(userPasswordBytes));
+  for(let i=1;i<=19;i++){
+    const derivedKey = new Uint8Array(keyLenBytes);
+    for(let k=0;k<keyLenBytes;k++) derivedKey[k] = rc4Key[k]^i;
+    encrypted = rc4(derivedKey, encrypted);
+  }
+  return encrypted;
+}
+// Algorithm 5: U 값 계산 (Revision 3 이상)
+function computeU(fileKey, idBytes, keyLenBytes){
+  let encrypted = rc4(fileKey, md5(concatBytes(PDF_PAD, idBytes)));
+  for(let i=1;i<=19;i++){
+    const derivedKey = new Uint8Array(keyLenBytes);
+    for(let k=0;k<keyLenBytes;k++) derivedKey[k] = fileKey[k]^i;
+    encrypted = rc4(derivedKey, encrypted);
+  }
+  const result = new Uint8Array(32);
+  result.set(encrypted, 0);
+  return result;
+}
+// Algorithm 1: 개별 객체 암호화 키 계산
+function computeObjectKey(fileKey, objNum, genNum){
+  const objBytes = new Uint8Array([objNum&0xff, (objNum>>>8)&0xff, (objNum>>>16)&0xff]);
+  const genBytes = new Uint8Array([genNum&0xff, (genNum>>>8)&0xff]);
+  const digest = md5(concatBytes(fileKey, objBytes, genBytes));
+  const n = Math.min(fileKey.length+5, 16);
+  return digest.subarray(0, n);
+}
+// 입력한 비밀번호가 사용자 암호 또는 소유자 암호로 유효한지 확인하고, 맞으면 파일 암호화 키를 반환
+function tryAuthenticate(passwordBytes, oBytes, uBytes, pValue, idBytes, keyLenBytes){
+  let fileKey = computeEncryptionKey(passwordBytes, oBytes, pValue, idBytes, keyLenBytes);
+  if(bytesEqual(computeU(fileKey, idBytes, keyLenBytes), uBytes, 16)) return fileKey;
+
+  let digest = md5(padPasswordBytes(passwordBytes));
+  for(let i=0;i<50;i++) digest = md5(digest.subarray(0, keyLenBytes));
+  const ownerRc4Key = digest.subarray(0, keyLenBytes).slice();
+  let data = oBytes.slice();
+  for(let i=19;i>=1;i--){
+    const derivedKey = new Uint8Array(keyLenBytes);
+    for(let k=0;k<keyLenBytes;k++) derivedKey[k] = ownerRc4Key[k]^i;
+    data = rc4(derivedKey, data);
+  }
+  const recoveredPaddedUserPassword = rc4(ownerRc4Key, data);
+  fileKey = computeEncryptionKey(recoveredPaddedUserPassword, oBytes, pValue, idBytes, keyLenBytes);
+  if(bytesEqual(computeU(fileKey, idBytes, keyLenBytes), uBytes, 16)) return fileKey;
+
+  return null;
+}
+// context 안의 모든 간접 객체(문자열/스트림)를 RC4로 암호화 또는 복호화(대칭 연산이라 동일 함수 재사용)
+function cryptTransformDocument(context, fileKey, skipRef){
+  const { PDFDict, PDFArray, PDFString, PDFHexString, PDFRawStream } = PDFLib;
+  function transformLeaf(val, objNum, genNum){
+    if(val instanceof PDFString || val instanceof PDFHexString){
+      const key = computeObjectKey(fileKey, objNum, genNum);
+      return PDFHexString.of(bytesToHex(rc4(key, val.asBytes())));
+    }
+    if(val instanceof PDFDict || val instanceof PDFArray){
+      walkContainer(val, objNum, genNum);
+      return val;
+    }
+    return val;
+  }
+  function walkContainer(container, objNum, genNum){
+    if(container instanceof PDFDict){
+      for(const key of container.keys()){
+        const val = container.get(key);
+        const nv = transformLeaf(val, objNum, genNum);
+        if(nv !== val) container.set(key, nv);
+      }
+    } else if(container instanceof PDFArray){
+      for(let i=0;i<container.size();i++){
+        const val = container.get(i);
+        const nv = transformLeaf(val, objNum, genNum);
+        if(nv !== val) container.set(i, nv);
+      }
+    }
+  }
+  const allObjects = context.enumerateIndirectObjects();
+  for(const [ref, obj] of allObjects){
+    if(skipRef && ref === skipRef) continue;
+    const objNum = ref.objectNumber, genNum = ref.generationNumber;
+    if(obj instanceof PDFRawStream){
+      walkContainer(obj.dict, objNum, genNum);
+      const key = computeObjectKey(fileKey, objNum, genNum);
+      const newContents = rc4(key, obj.getContents());
+      context.assign(ref, PDFRawStream.of(obj.dict, newContents));
+    } else if(obj instanceof PDFDict || obj instanceof PDFArray){
+      walkContainer(obj, objNum, genNum);
+    } else if(obj instanceof PDFString || obj instanceof PDFHexString){
+      const key = computeObjectKey(fileKey, objNum, genNum);
+      context.assign(ref, PDFHexString.of(bytesToHex(rc4(key, obj.asBytes()))));
+    }
+  }
+}
+
+async function encryptPdfWithPassword(fileBytes, password){
+  const { PDFDocument, PDFName, PDFNumber, PDFHexString, PDFDict, PDFArray } = PDFLib;
+  const doc = await PDFDocument.load(fileBytes, {ignoreEncryption:true});
+  const context = doc.context;
+  const keyLenBytes = 16; // 128비트
+  const pValue = -1; // 열람 권한 제한 없음(비밀번호만 요구)
+  const passwordBytes = new TextEncoder().encode(password);
+
+  let idBytes;
+  const existingId = context.trailerInfo.ID;
+  if(existingId instanceof PDFArray && existingId.size() > 0){
+    idBytes = existingId.get(0).asBytes();
+  } else {
+    idBytes = randomBytes(16);
+    const idArray = PDFArray.withContext(context);
+    idArray.push(PDFHexString.of(bytesToHex(idBytes)));
+    idArray.push(PDFHexString.of(bytesToHex(idBytes)));
+    context.trailerInfo.ID = idArray;
+  }
+
+  const oBytes = computeO(passwordBytes, passwordBytes, keyLenBytes);
+  const fileKey = computeEncryptionKey(passwordBytes, oBytes, pValue, idBytes, keyLenBytes);
+  const uBytes = computeU(fileKey, idBytes, keyLenBytes);
+
+  cryptTransformDocument(context, fileKey, null);
+
+  const encryptDict = PDFDict.withContext(context);
+  encryptDict.set(PDFName.of('Filter'), PDFName.of('Standard'));
+  encryptDict.set(PDFName.of('V'), PDFNumber.of(2));
+  encryptDict.set(PDFName.of('R'), PDFNumber.of(3));
+  encryptDict.set(PDFName.of('O'), PDFHexString.of(bytesToHex(oBytes)));
+  encryptDict.set(PDFName.of('U'), PDFHexString.of(bytesToHex(uBytes)));
+  encryptDict.set(PDFName.of('P'), PDFNumber.of(pValue));
+  encryptDict.set(PDFName.of('Length'), PDFNumber.of(keyLenBytes*8));
+  const encryptRef = context.register(encryptDict);
+  context.trailerInfo.Encrypt = encryptRef;
+
+  return await doc.save({useObjectStreams:false});
+}
+
+async function decryptPdfWithPassword(fileBytes, password){
+  const { PDFDocument, PDFName, PDFDict, PDFRef, PDFArray } = PDFLib;
+  let doc;
+  try{
+    doc = await PDFDocument.load(fileBytes, {ignoreEncryption:true});
+  }catch(e){
+    const err = new Error('UNSUPPORTED'); err.cause = e; throw err;
+  }
+  const context = doc.context;
+
+  const encryptObj = context.trailerInfo.Encrypt;
+  if(!encryptObj) throw new Error('NOT_ENCRYPTED');
+  const encryptDict = encryptObj instanceof PDFRef ? context.lookup(encryptObj, PDFDict) : encryptObj;
+
+  const vObj = encryptDict.get(PDFName.of('V'));
+  const rObj = encryptDict.get(PDFName.of('R'));
+  const V = vObj ? vObj.asNumber() : 0;
+  const R = rObj ? rObj.asNumber() : 0;
+  if(!(V === 2 && R === 3)) throw new Error('UNSUPPORTED');
+
+  const lengthObj = encryptDict.get(PDFName.of('Length'));
+  const keyLenBytes = lengthObj ? Math.max(5, Math.round(lengthObj.asNumber()/8)) : 16;
+
+  const oObj = encryptDict.get(PDFName.of('O'));
+  const uObj = encryptDict.get(PDFName.of('U'));
+  const pObj = encryptDict.get(PDFName.of('P'));
+  if(!oObj || !uObj || !pObj) throw new Error('UNSUPPORTED');
+  const oBytes = oObj.asBytes();
+  const uBytes = uObj.asBytes();
+  const pValue = pObj.asNumber();
+
+  let idBytes = new Uint8Array(0);
+  const idArr = context.trailerInfo.ID;
+  if(idArr instanceof PDFArray && idArr.size() > 0) idBytes = idArr.get(0).asBytes();
+
+  const passwordBytes = new TextEncoder().encode(password);
+  const fileKey = tryAuthenticate(passwordBytes, oBytes, uBytes, pValue, idBytes, keyLenBytes);
+  if(!fileKey) throw new Error('WRONG_PASSWORD');
+
+  cryptTransformDocument(context, fileKey, encryptObj instanceof PDFRef ? encryptObj : null);
+
+  context.trailerInfo.Encrypt = undefined;
+  if(encryptObj instanceof PDFRef) context.delete(encryptObj);
+
+  return await doc.save({useObjectStreams:false});
+}
+
+// ---------- 암호 넣기/해제 UI ----------
+const pwModeEncryptBtn = document.getElementById('pw-mode-encrypt');
+const pwModeDecryptBtn = document.getElementById('pw-mode-decrypt');
+const pwEncryptUi = document.getElementById('pw-encrypt-ui');
+const pwDecryptUi = document.getElementById('pw-decrypt-ui');
+pwModeEncryptBtn.addEventListener('click', ()=>{
+  pwModeEncryptBtn.classList.add('on'); pwModeDecryptBtn.classList.remove('on');
+  pwEncryptUi.style.display='block'; pwDecryptUi.style.display='none';
+});
+pwModeDecryptBtn.addEventListener('click', ()=>{
+  pwModeDecryptBtn.classList.add('on'); pwModeEncryptBtn.classList.remove('on');
+  pwDecryptUi.style.display='block'; pwEncryptUi.style.display='none';
+});
+
+let pwEncFile = null, pwDecFile = null;
+
+const pwEncDrop = document.getElementById('pw-enc-drop');
+const pwEncInput = document.getElementById('pw-enc-input');
+const pwEncFilenameEl = document.getElementById('pw-enc-filename');
+const pwEncPass1 = document.getElementById('pw-enc-pass1');
+const pwEncPass2 = document.getElementById('pw-enc-pass2');
+const pwEncFilenameInput = document.getElementById('pw-enc-filename-input');
+const pwEncBtn = document.getElementById('pw-enc-btn');
+const pwEncStatus = document.getElementById('pw-enc-status');
+
+['dragenter','dragover'].forEach(ev=>pwEncDrop.addEventListener(ev, e=>{e.preventDefault(); pwEncDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>pwEncDrop.addEventListener(ev, e=>{e.preventDefault(); pwEncDrop.classList.remove('drag');}));
+pwEncDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadPwEncFile(e.dataTransfer.files[0]); });
+pwEncInput.addEventListener('change', e=>{ if(e.target.files[0]) loadPwEncFile(e.target.files[0]); pwEncInput.value=''; });
+
+function loadPwEncFile(file){
+  pwEncFile = file;
+  pwEncFilenameEl.textContent = `${file.name} · ${fmtSize(file.size)}`;
+  if(!pwEncFilenameInput.dataset.touched) pwEncFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_protected';
+  updatePwEncBtn();
+  setStatus(pwEncStatus, '');
+}
+pwEncFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched='1'; });
+function updatePwEncBtn(){
+  pwEncBtn.disabled = !pwEncFile || !pwEncPass1.value || pwEncPass1.value !== pwEncPass2.value;
+}
+pwEncPass1.addEventListener('input', updatePwEncBtn);
+pwEncPass2.addEventListener('input', updatePwEncBtn);
+
+pwEncBtn.addEventListener('click', async ()=>{
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(pwEncStatus, '처리 엔진을 불러오지 못해 처리할 수 없어요.', 'err'); return; }
+  if(!pwEncFile){ setStatus(pwEncStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  if(!pwEncPass1.value){ setStatus(pwEncStatus, '설정할 비밀번호를 입력하세요.', 'err'); return; }
+  if(pwEncPass1.value !== pwEncPass2.value){ setStatus(pwEncStatus, '비밀번호가 서로 달라요.', 'err'); return; }
+  pwEncBtn.disabled = true;
+  setStatus(pwEncStatus, '암호를 설정하는 중…');
+  try{
+    const bytes = await pwEncFile.arrayBuffer();
+    const outBytes = await encryptPdfWithPassword(bytes, pwEncPass1.value);
+    await downloadBlob(outBytes, toPdfName(pwEncFilenameInput.value, 'protected'));
+    setStatus(pwEncStatus, '완료! 비밀번호가 설정된 PDF를 저장했어요.', 'ok');
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(pwEncStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else setStatus(pwEncStatus, '암호를 설정하는 중 오류가 발생했어요. 이미 암호가 걸린 파일은 먼저 암호를 해제한 뒤 다시 시도하세요.', 'err');
+  }
+  updatePwEncBtn();
+});
+
+const pwDecDrop = document.getElementById('pw-dec-drop');
+const pwDecInput = document.getElementById('pw-dec-input');
+const pwDecFilenameEl = document.getElementById('pw-dec-filename');
+const pwDecPass = document.getElementById('pw-dec-pass');
+const pwDecFilenameInput = document.getElementById('pw-dec-filename-input');
+const pwDecBtn = document.getElementById('pw-dec-btn');
+const pwDecStatus = document.getElementById('pw-dec-status');
+
+['dragenter','dragover'].forEach(ev=>pwDecDrop.addEventListener(ev, e=>{e.preventDefault(); pwDecDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>pwDecDrop.addEventListener(ev, e=>{e.preventDefault(); pwDecDrop.classList.remove('drag');}));
+pwDecDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadPwDecFile(e.dataTransfer.files[0]); });
+pwDecInput.addEventListener('change', e=>{ if(e.target.files[0]) loadPwDecFile(e.target.files[0]); pwDecInput.value=''; });
+
+function loadPwDecFile(file){
+  pwDecFile = file;
+  pwDecFilenameEl.textContent = `${file.name} · ${fmtSize(file.size)}`;
+  if(!pwDecFilenameInput.dataset.touched) pwDecFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_unlocked';
+  updatePwDecBtn();
+  setStatus(pwDecStatus, '');
+}
+pwDecFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched='1'; });
+function updatePwDecBtn(){
+  pwDecBtn.disabled = !pwDecFile || !pwDecPass.value;
+}
+pwDecPass.addEventListener('input', updatePwDecBtn);
+
+pwDecBtn.addEventListener('click', async ()=>{
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(pwDecStatus, '처리 엔진을 불러오지 못해 처리할 수 없어요.', 'err'); return; }
+  if(!pwDecFile){ setStatus(pwDecStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  if(!pwDecPass.value){ setStatus(pwDecStatus, '비밀번호를 입력하세요.', 'err'); return; }
+  pwDecBtn.disabled = true;
+  setStatus(pwDecStatus, '암호를 해제하는 중…');
+  try{
+    const bytes = await pwDecFile.arrayBuffer();
+    const outBytes = await decryptPdfWithPassword(bytes, pwDecPass.value);
+    await downloadBlob(outBytes, toPdfName(pwDecFilenameInput.value, 'unlocked'));
+    setStatus(pwDecStatus, '완료! 암호가 해제된 PDF를 저장했어요.', 'ok');
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(pwDecStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else if(err && err.message === 'NOT_ENCRYPTED') setStatus(pwDecStatus, '이 PDF에는 암호가 설정되어 있지 않아요.', 'err');
+    else if(err && err.message === 'WRONG_PASSWORD') setStatus(pwDecStatus, '비밀번호가 올바르지 않아요.', 'err');
+    else if(err && err.message === 'UNSUPPORTED') setStatus(pwDecStatus, '지원하지 않는 암호화 방식이에요. 최신 고급 암호화(AES)나 특수한 압축 구조를 쓰는 PDF는 해제할 수 없어요.', 'err');
+    else setStatus(pwDecStatus, '암호를 해제하는 중 오류가 발생했어요.', 'err');
+  }
+  updatePwDecBtn();
 });
 </script>
 </body>
