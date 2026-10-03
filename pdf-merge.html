@@ -6,6 +6,7 @@
 <title>HappyOh PDF 도구</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" onerror="window.__pdfLibFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onerror="window.__pdfjsFailed=true"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js" onerror="window.__cryptojsFailed=true"></script>
 <style>
   :root{
     --bg:#f5f6f8; --card:#fff; --text:#1d2129; --sub:#6b7280;
@@ -178,6 +179,7 @@
     <div class="tab" data-tab="insert">페이지 추가</div>
     <div class="tab" data-tab="rotate">페이지 회전</div>
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
+    <div class="tab" data-tab="password">암호</div>
   </div>
 
   <!-- 합치기 -->
@@ -378,6 +380,60 @@
       <button class="btn" id="img-btn" disabled>이미지를 PDF로 만들기</button>
       <div class="status" id="img-status"></div>
       <p class="hint">JPG·PNG 파일만 지원해요. 묶지 않은 이미지는 한 장씩 A4 페이지에 꽉 차게, 묶은 이미지는 한 페이지 안에 위아래로 나눠 배치돼요. 각 페이지 위/아래에 짧은 설명 글(한글 가능)도 선택적으로 넣을 수 있어요 — 처음 한 번 한글 글꼴을 추가로 내려받아요.</p>
+    </div>
+  </div>
+
+  <!-- 암호 넣기/해제 -->
+  <div class="panel" id="panel-password">
+    <div class="card">
+      <div class="mode-toggle">
+        <button id="pw-mode-encrypt" class="on">암호 넣기</button>
+        <button id="pw-mode-decrypt">암호 해제</button>
+      </div>
+
+      <div id="pw-encrypt-ui">
+        <label class="drop" id="pw-enc-drop" for="pw-enc-input">
+          암호를 설정할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+          <input type="file" id="pw-enc-input" accept="application/pdf">
+        </label>
+        <div id="pw-enc-body" style="display:none;">
+          <p class="hint" id="pw-enc-filename"></p>
+          <div class="range-row">
+            <input type="password" id="pw-enc-password" placeholder="설정할 암호" autocomplete="new-password">
+          </div>
+          <div class="range-row" style="margin-top:8px;">
+            <input type="password" id="pw-enc-password2" placeholder="암호 확인" autocomplete="new-password">
+          </div>
+          <p class="hint">이 암호를 입력해야 파일을 열 수 있어요. 암호를 잊으면 복구할 수 없으니 꼭 기억해 두세요.</p>
+
+          <hr style="margin:22px 0; border:none; border-top:1px solid var(--border);">
+          <div class="range-row">
+            <input type="text" id="pw-enc-filename-input" placeholder="저장할 파일 이름">
+          </div>
+          <button class="btn" id="pw-enc-btn">암호 설정하고 저장</button>
+          <div class="status" id="pw-enc-status"></div>
+        </div>
+      </div>
+
+      <div id="pw-decrypt-ui" style="display:none;">
+        <label class="drop" id="pw-dec-drop" for="pw-dec-input">
+          암호를 해제할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+          <input type="file" id="pw-dec-input" accept="application/pdf">
+        </label>
+        <div id="pw-dec-body" style="display:none;">
+          <p class="hint" id="pw-dec-filename"></p>
+          <div class="range-row">
+            <input type="password" id="pw-dec-password" placeholder="현재 암호" autocomplete="current-password">
+          </div>
+
+          <hr style="margin:22px 0; border:none; border-top:1px solid var(--border);">
+          <div class="range-row">
+            <input type="text" id="pw-dec-filename-input" placeholder="저장할 파일 이름">
+          </div>
+          <button class="btn" id="pw-dec-btn">암호 해제하고 저장</button>
+          <div class="status" id="pw-dec-status"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1768,6 +1824,461 @@ imgBtn.addEventListener('click', async ()=>{
     else setStatus(imgStatus, '만드는 중 오류가 발생했어요. JPG·PNG만 지원합니다.', 'err');
   }
   imgBtn.disabled = imgPageItems.length < 1;
+});
+
+// ---------- 암호 넣기/해제 ----------
+// pdf-lib은 PDF 암호화(복호화)를 지원하지 않으므로, PDF 표준 보안 핸들러(RC4/AES)를
+// CryptoJS 기본 연산으로 직접 구현해 pdf-lib의 저수준 객체 트리에 적용한다.
+const PW_MAX_SIZE = 80 * 1024 * 1024; // 80MB
+
+function cryptoReady(){
+  if (typeof CryptoJS === 'undefined' || window.__cryptojsFailed) {
+    document.getElementById('lib-error').style.display = 'block';
+    return false;
+  }
+  return true;
+}
+
+const PW_PAD = new Uint8Array([
+  0x28,0xBF,0x4E,0x5E,0x4E,0x75,0x8A,0x41,0x64,0x00,0x4E,0x56,0xFF,0xFA,0x01,0x08,
+  0x2E,0x2E,0x00,0xB6,0xD0,0x68,0x3E,0x80,0x2F,0x0C,0xA9,0xFE,0x64,0x53,0x69,0x7A
+]);
+function pwBytesToWordArray(bytes){
+  const words = [];
+  for(let i=0;i<bytes.length;i+=4){
+    words.push(((bytes[i]||0)<<24) | ((bytes[i+1]||0)<<16) | ((bytes[i+2]||0)<<8) | (bytes[i+3]||0));
+  }
+  return CryptoJS.lib.WordArray.create(words, bytes.length);
+}
+function pwWordArrayToBytes(wa){
+  const words = wa.words, sigBytes = wa.sigBytes;
+  const bytes = new Uint8Array(sigBytes);
+  for(let i=0;i<sigBytes;i++) bytes[i] = (words[i>>>2] >>> (24 - (i%4)*8)) & 0xff;
+  return bytes;
+}
+function pwMd5(bytes){ return pwWordArrayToBytes(CryptoJS.MD5(pwBytesToWordArray(bytes))); }
+function pwSha256(bytes){ return pwWordArrayToBytes(CryptoJS.SHA256(pwBytesToWordArray(bytes))); }
+function pwSha384(bytes){ return pwWordArrayToBytes(CryptoJS.SHA384(pwBytesToWordArray(bytes))); }
+function pwSha512(bytes){ return pwWordArrayToBytes(CryptoJS.SHA512(pwBytesToWordArray(bytes))); }
+function pwRc4(keyBytes, dataBytes){
+  const cipher = CryptoJS.algo.RC4.createEncryptor(pwBytesToWordArray(keyBytes), {});
+  return pwWordArrayToBytes(cipher.finalize(pwBytesToWordArray(dataBytes)));
+}
+function pwConcat(...arrs){
+  let len = 0; arrs.forEach(a=>len+=a.length);
+  const out = new Uint8Array(len);
+  let off = 0; arrs.forEach(a=>{ out.set(a, off); off += a.length; });
+  return out;
+}
+function pwStrToBytes(str){
+  const out = new Uint8Array(str.length);
+  for(let i=0;i<str.length;i++) out[i] = str.charCodeAt(i) & 0xff;
+  return out;
+}
+function pwBytesToHex(bytes){
+  let hex = '';
+  for(let i=0;i<bytes.length;i++) hex += bytes[i].toString(16).padStart(2,'0');
+  return hex;
+}
+function pwPadPassword(pwdBytes){
+  const out = new Uint8Array(32);
+  const n = Math.min(pwdBytes.length, 32);
+  out.set(pwdBytes.subarray(0,n), 0);
+  out.set(PW_PAD.subarray(0, 32-n), n);
+  return out;
+}
+function pwI32le(n){
+  const u = n < 0 ? (n + 0x100000000) : n;
+  return new Uint8Array([u & 0xff, (u>>>8)&0xff, (u>>>16)&0xff, (u>>>24)&0xff]);
+}
+function pwBytesEqual(a,b){
+  if(a.length !== b.length) return false;
+  for(let i=0;i<a.length;i++) if(a[i]!==b[i]) return false;
+  return true;
+}
+// Algorithm 2: 암호로부터 파일 암호화 키 계산
+function pwComputeEncryptionKey(passwordBytes, O, P, idBytes, keyLenBytes, R){
+  const input = pwConcat(pwPadPassword(passwordBytes), O, pwI32le(P), idBytes);
+  let hash = pwMd5(input);
+  if(R >= 3){ for(let i=0;i<50;i++) hash = pwMd5(hash.subarray(0, keyLenBytes)); }
+  return hash.subarray(0, keyLenBytes);
+}
+// Algorithm 3: /O 값 계산
+function pwComputeO(ownerPwdBytes, userPwdBytes, keyLenBytes, R){
+  let hash = pwMd5(pwPadPassword(ownerPwdBytes));
+  if(R >= 3){ for(let i=0;i<50;i++) hash = pwMd5(hash.subarray(0, keyLenBytes)); }
+  const rc4Key = hash.subarray(0, keyLenBytes);
+  let out = pwRc4(rc4Key, pwPadPassword(userPwdBytes));
+  if(R >= 3){
+    for(let i=1;i<=19;i++){
+      const iterKey = new Uint8Array(keyLenBytes);
+      for(let j=0;j<keyLenBytes;j++) iterKey[j] = rc4Key[j] ^ i;
+      out = pwRc4(iterKey, out);
+    }
+  }
+  return out;
+}
+// Algorithm 4(R2)/5(R3,4): /U 값 계산
+function pwComputeU(fileKey, idBytes, R){
+  if(R === 2) return pwRc4(fileKey, PW_PAD);
+  let out = pwRc4(fileKey, pwMd5(pwConcat(PW_PAD, idBytes)));
+  for(let i=1;i<=19;i++){
+    const iterKey = new Uint8Array(fileKey.length);
+    for(let j=0;j<fileKey.length;j++) iterKey[j] = fileKey[j] ^ i;
+    out = pwRc4(iterKey, out);
+  }
+  return pwConcat(out, new Uint8Array(16));
+}
+// Algorithm 1: 객체별 암호화 키
+function pwObjectKey(fileKey, objNum, genNum, isAES){
+  const extra = isAES ? pwStrToBytes('sAlT') : new Uint8Array(0);
+  const input = pwConcat(
+    fileKey,
+    new Uint8Array([objNum & 0xff, (objNum>>>8)&0xff, (objNum>>>16)&0xff]),
+    new Uint8Array([genNum & 0xff, (genNum>>>8)&0xff]),
+    extra
+  );
+  const hash = pwMd5(input);
+  return hash.subarray(0, Math.min(fileKey.length + 5, 16));
+}
+function pwAesCbcNoPad(keyBytes, ivBytes, dataBytes, decrypt){
+  const cfg = { mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.NoPadding, iv: pwBytesToWordArray(ivBytes) };
+  const key = pwBytesToWordArray(keyBytes);
+  const cipher = decrypt ? CryptoJS.algo.AES.createDecryptor(key, cfg) : CryptoJS.algo.AES.createEncryptor(key, cfg);
+  return pwWordArrayToBytes(cipher.finalize(pwBytesToWordArray(dataBytes)));
+}
+function pwAesDecryptPdfData(keyBytes, dataBytes){
+  if(dataBytes.length <= 16) return new Uint8Array(0);
+  const iv = dataBytes.subarray(0,16);
+  const ct = dataBytes.subarray(16);
+  if(ct.length === 0 || ct.length % 16 !== 0) return new Uint8Array(0);
+  const padded = pwAesCbcNoPad(keyBytes, iv, ct, true);
+  const padLen = padded[padded.length-1];
+  if(padLen >= 1 && padLen <= 16 && padLen <= padded.length) return padded.subarray(0, padded.length - padLen);
+  return padded;
+}
+function pwAesEncryptPdfData(keyBytes, ivBytes, plainBytes){
+  const padLen = 16 - (plainBytes.length % 16);
+  const padded = new Uint8Array(plainBytes.length + padLen);
+  padded.set(plainBytes, 0);
+  padded.fill(padLen, plainBytes.length);
+  return pwConcat(ivBytes, pwAesCbcNoPad(keyBytes, ivBytes, padded, false));
+}
+// ISO 32000-2 Algorithm 2.B: AES-256(R6)용 강화 해시
+function pwHash2B(passwordBytes, saltBytes, udataBytes){
+  udataBytes = udataBytes || new Uint8Array(0);
+  let K = pwSha256(pwConcat(passwordBytes, saltBytes, udataBytes));
+  let round = 0;
+  while(true){
+    const piece = pwConcat(passwordBytes, K, udataBytes);
+    let K1 = new Uint8Array(0);
+    for(let i=0;i<64;i++) K1 = pwConcat(K1, piece);
+    const E = pwAesCbcNoPad(K.subarray(0,16), K.subarray(16,32), K1, false);
+    let sum = 0;
+    for(let i=0;i<16;i++) sum += E[i];
+    const mod = sum % 3;
+    K = mod === 0 ? pwSha256(E) : (mod === 1 ? pwSha384(E) : pwSha512(E));
+    round++;
+    if(round >= 64 && E[E.length-1] <= round - 32) break;
+  }
+  return K.subarray(0,32);
+}
+// Algorithm 2.A: AES-256(R5/R6) 파일 암호화 키 복원 (사용자 또는 소유자 암호)
+function pwComputeFileKeyR56(passwordBytes, O, U, OE, UE, R){
+  const uValSalt = U.subarray(32,40), uKeySalt = U.subarray(40,48);
+  const oValSalt = O.subarray(32,40), oKeySalt = O.subarray(40,48);
+  const hashFn = R >= 6 ? pwHash2B : (pw, salt, udata) => pwSha256(pwConcat(pw, salt, udata));
+  const uHash = hashFn(passwordBytes, uValSalt, new Uint8Array(0));
+  if(pwBytesEqual(uHash, U.subarray(0,32))){
+    const interKey = hashFn(passwordBytes, uKeySalt, new Uint8Array(0));
+    return pwAesCbcNoPad(interKey, new Uint8Array(16), UE, true);
+  }
+  const oHash = hashFn(passwordBytes, oValSalt, U.subarray(0,48));
+  if(pwBytesEqual(oHash, O.subarray(0,32))){
+    const interKey = hashFn(passwordBytes, oKeySalt, U.subarray(0,48));
+    return pwAesCbcNoPad(interKey, new Uint8Array(16), OE, true);
+  }
+  return null;
+}
+
+function pwWalkAndTransform(obj, transformLeaf, seen){
+  const { PDFDict, PDFArray, PDFString, PDFHexString } = PDFLib;
+  if(obj instanceof PDFDict){
+    if(seen.has(obj)) return; seen.add(obj);
+    obj.entries().forEach(([key, val]) => {
+      const replaced = pwWalkValue(val, transformLeaf, seen);
+      if(replaced !== val) obj.set(key, replaced);
+    });
+  } else if(obj instanceof PDFArray){
+    if(seen.has(obj)) return; seen.add(obj);
+    for(let i=0;i<obj.size();i++){
+      const val = obj.get(i);
+      const replaced = pwWalkValue(val, transformLeaf, seen);
+      if(replaced !== val) obj.set(i, replaced);
+    }
+  }
+}
+function pwWalkValue(val, transformLeaf, seen){
+  const { PDFDict, PDFArray, PDFString, PDFHexString } = PDFLib;
+  if(val instanceof PDFString || val instanceof PDFHexString) return transformLeaf(val);
+  if(val instanceof PDFDict || val instanceof PDFArray){ pwWalkAndTransform(val, transformLeaf, seen); return val; }
+  return val;
+}
+function pwNum(obj, def){ return (obj && typeof obj.asNumber === 'function') ? obj.asNumber() : def; }
+
+async function pwEncryptBytes(plainBytes, userPassword, ownerPassword){
+  const { PDFDocument, PDFRawStream, PDFHexString } = PDFLib;
+  // 콘텐츠 스트림 등이 save() 시점에만 바이트로 확정되므로, 평문으로 한 번 저장한 뒤
+  // 다시 읽어 모든 객체가 구체적인 바이트(PDFRawStream 등)를 갖도록 한다.
+  const roundTripped = await (await PDFDocument.load(plainBytes, {ignoreEncryption:true, updateMetadata:false})).save({useObjectStreams:false});
+  const doc = await PDFDocument.load(roundTripped, { updateMetadata: false });
+  const context = doc.context;
+  const keyLenBytes = 16, R = 3, V = 2;
+  const idBytes = crypto.getRandomValues(new Uint8Array(16));
+
+  const userPwdBytes = pwStrToBytes(userPassword || '');
+  const ownerPwdBytes = pwStrToBytes(ownerPassword || userPassword || '');
+  const P = -4; // 모든 권한 허용
+
+  const O = pwComputeO(ownerPwdBytes, userPwdBytes, keyLenBytes, R);
+  const fileKey = pwComputeEncryptionKey(userPwdBytes, O, P, idBytes, keyLenBytes, R);
+  const U = pwComputeU(fileKey, idBytes, R);
+
+  const seen = new Set();
+  for(const [ref, object] of context.enumerateIndirectObjects()){
+    const objKey = pwObjectKey(fileKey, ref.objectNumber, ref.generationNumber, false);
+    const encryptLeaf = (strObj) => {
+      const raw = strObj.asBytes();
+      if(raw.length === 0) return strObj;
+      return PDFHexString.of(pwBytesToHex(pwRc4(objKey, raw)));
+    };
+    if(object instanceof PDFRawStream){
+      if(object.contents.length > 0) object.contents = pwRc4(objKey, object.contents);
+      pwWalkAndTransform(object.dict, encryptLeaf, seen);
+    } else {
+      pwWalkAndTransform(object, encryptLeaf, seen);
+    }
+  }
+
+  const encryptDict = context.obj({
+    Filter: 'Standard', V, R,
+    O: PDFHexString.of(pwBytesToHex(O)),
+    U: PDFHexString.of(pwBytesToHex(U)),
+    P, Length: keyLenBytes * 8,
+  });
+  context.trailerInfo.Encrypt = context.register(encryptDict);
+  context.trailerInfo.ID = context.obj([PDFHexString.of(pwBytesToHex(idBytes)), PDFHexString.of(pwBytesToHex(idBytes))]);
+
+  return doc.save({ useObjectStreams: false });
+}
+
+async function pwDecryptBytes(fileBytes, password){
+  const { PDFDocument, PDFDict, PDFArray, PDFString, PDFHexString, PDFRawStream, PDFName } = PDFLib;
+  const doc = await PDFDocument.load(fileBytes, { ignoreEncryption: true, updateMetadata: false });
+  const context = doc.context;
+  const encRef = context.trailerInfo.Encrypt;
+  if(!encRef){ const e = new Error('이 파일은 암호로 보호되어 있지 않아요.'); e.code='not_encrypted'; throw e; }
+  const encDict = context.lookup(encRef, PDFDict);
+
+  const V = pwNum(encDict.get(PDFName.of('V')), 0);
+  const R = pwNum(encDict.get(PDFName.of('R')), 2);
+  const O = encDict.get(PDFName.of('O')).asBytes();
+  const U = encDict.get(PDFName.of('U')).asBytes();
+  const P = pwNum(encDict.get(PDFName.of('P')), 0);
+  const lengthBits = pwNum(encDict.get(PDFName.of('Length')), 40);
+  const keyLenBytes = Math.ceil(lengthBits/8) || 5;
+
+  const idArr = context.trailerInfo.ID;
+  let idBytes = new Uint8Array(0);
+  if(idArr instanceof PDFArray && idArr.size() > 0){
+    const id0 = idArr.get(0);
+    if(id0 instanceof PDFString || id0 instanceof PDFHexString) idBytes = id0.asBytes();
+  }
+
+  const pwdBytes = pwStrToBytes(password || '');
+  let fileKey = null, cipher = 'RC4';
+
+  if(V >= 5){
+    const OE = encDict.get(PDFName.of('OE')).asBytes();
+    const UE = encDict.get(PDFName.of('UE')).asBytes();
+    fileKey = pwComputeFileKeyR56(pwdBytes, O, U, OE, UE, R);
+    if(!fileKey){ const e = new Error('암호가 올바르지 않아요.'); e.code='wrong_password'; throw e; }
+    cipher = 'AESV3';
+  } else {
+    if(V === 4){
+      const CF = encDict.get(PDFName.of('CF'));
+      const StmF = encDict.get(PDFName.of('StmF'));
+      if(CF instanceof PDFDict && StmF){
+        const cfDict = CF.get(StmF);
+        const cfm = cfDict && cfDict.get && cfDict.get(PDFName.of('CFM'));
+        if(cfm && cfm.toString() === '/AESV2') cipher = 'AESV2';
+      }
+    }
+    let key = pwComputeEncryptionKey(pwdBytes, O, P, idBytes, keyLenBytes, R);
+    let U2 = pwComputeU(key, idBytes, R);
+    const cmpLen = R === 2 ? 32 : 16;
+    if(pwBytesEqual(U2.subarray(0,cmpLen), U.subarray(0,cmpLen))){
+      fileKey = key;
+    } else {
+      // 소유자 암호로 시도: Algorithm 3을 거꾸로 적용해 사용자 암호를 복원
+      let hash = pwMd5(pwPadPassword(pwdBytes));
+      if(R >= 3){ for(let i=0;i<50;i++) hash = pwMd5(hash.subarray(0, keyLenBytes)); }
+      const ownerRc4Key = hash.subarray(0, keyLenBytes);
+      let recovered = O.slice();
+      if(R >= 3){
+        for(let i=19;i>=1;i--){
+          const iterKey = new Uint8Array(keyLenBytes);
+          for(let j=0;j<keyLenBytes;j++) iterKey[j] = ownerRc4Key[j] ^ i;
+          recovered = pwRc4(iterKey, recovered);
+        }
+      }
+      recovered = pwRc4(ownerRc4Key, recovered);
+      key = pwComputeEncryptionKey(recovered.subarray(0,32), O, P, idBytes, keyLenBytes, R);
+      U2 = pwComputeU(key, idBytes, R);
+      if(pwBytesEqual(U2.subarray(0,cmpLen), U.subarray(0,cmpLen))) fileKey = key;
+      else { const e = new Error('암호가 올바르지 않아요.'); e.code='wrong_password'; throw e; }
+    }
+  }
+
+  const seen = new Set();
+  for(const [ref, object] of context.enumerateIndirectObjects()){
+    if(ref === encRef) continue;
+    const objKey = cipher === 'AESV3' ? fileKey : pwObjectKey(fileKey, ref.objectNumber, ref.generationNumber, cipher !== 'RC4');
+    const decryptLeaf = (strObj) => {
+      const raw = strObj.asBytes();
+      if(raw.length === 0) return strObj;
+      const dec = cipher === 'RC4' ? pwRc4(objKey, raw) : pwAesDecryptPdfData(objKey, raw);
+      return PDFHexString.of(pwBytesToHex(dec));
+    };
+    if(object instanceof PDFRawStream){
+      if(object.contents.length > 0){
+        object.contents = cipher === 'RC4' ? pwRc4(objKey, object.contents) : pwAesDecryptPdfData(objKey, object.contents);
+      }
+      pwWalkAndTransform(object.dict, decryptLeaf, seen);
+    } else {
+      pwWalkAndTransform(object, decryptLeaf, seen);
+    }
+  }
+
+  delete context.trailerInfo.Encrypt;
+  return doc.save({ useObjectStreams: false });
+}
+
+// ---- UI 연결 ----
+document.getElementById('pw-mode-encrypt').addEventListener('click', ()=>setPwMode('encrypt'));
+document.getElementById('pw-mode-decrypt').addEventListener('click', ()=>setPwMode('decrypt'));
+function setPwMode(m){
+  document.getElementById('pw-mode-encrypt').classList.toggle('on', m==='encrypt');
+  document.getElementById('pw-mode-decrypt').classList.toggle('on', m==='decrypt');
+  document.getElementById('pw-encrypt-ui').style.display = m==='encrypt' ? 'block' : 'none';
+  document.getElementById('pw-decrypt-ui').style.display = m==='decrypt' ? 'block' : 'none';
+}
+
+let pwEncFile = null, pwEncBytes = null;
+const pwEncDrop = document.getElementById('pw-enc-drop');
+const pwEncInput = document.getElementById('pw-enc-input');
+const pwEncBody = document.getElementById('pw-enc-body');
+const pwEncFilenameEl = document.getElementById('pw-enc-filename');
+const pwEncStatus = document.getElementById('pw-enc-status');
+const pwEncFilenameInput = document.getElementById('pw-enc-filename-input');
+
+['dragenter','dragover'].forEach(ev=>pwEncDrop.addEventListener(ev, e=>{e.preventDefault(); pwEncDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>pwEncDrop.addEventListener(ev, e=>{e.preventDefault(); pwEncDrop.classList.remove('drag');}));
+pwEncDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadPwEncFile(e.dataTransfer.files[0]); });
+pwEncInput.addEventListener('change', e=>{ if(e.target.files[0]) loadPwEncFile(e.target.files[0]); pwEncInput.value=''; });
+
+async function loadPwEncFile(file){
+  setStatus(pwEncStatus, '');
+  if(file.size > PW_MAX_SIZE){ setStatus(pwEncStatus, '파일이 너무 커요. 80MB 이하 파일만 지원해요.', 'err'); return; }
+  if(!cryptoReady()){ setStatus(pwEncStatus, '처리 엔진을 불러오지 못해 열 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument) return;
+  try{
+    const bytes = await file.arrayBuffer();
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    if(doc.context.trailerInfo.Encrypt){
+      setStatus(pwEncStatus, '이미 암호가 설정된 파일이에요. 먼저 [암호 해제]로 암호를 푼 뒤 다시 시도하세요.', 'err');
+      pwEncBody.style.display = 'none';
+      return;
+    }
+    pwEncFile = file; pwEncBytes = bytes;
+    pwEncFilenameEl.textContent = `${file.name} · 총 ${doc.getPageCount()}쪽`;
+    if(!pwEncFilenameInput.dataset.touched) pwEncFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_protected';
+    pwEncBody.style.display = 'block';
+  }catch(err){
+    console.error(err);
+    setStatus(pwEncStatus, 'PDF를 여는 중 오류가 발생했어요.', 'err');
+  }
+}
+pwEncFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+
+document.getElementById('pw-enc-btn').addEventListener('click', async ()=>{
+  if(!pwEncBytes){ setStatus(pwEncStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  const pwd1 = document.getElementById('pw-enc-password').value;
+  const pwd2 = document.getElementById('pw-enc-password2').value;
+  if(!pwd1){ setStatus(pwEncStatus, '설정할 암호를 입력하세요.', 'err'); return; }
+  if(pwd1 !== pwd2){ setStatus(pwEncStatus, '암호 확인이 일치하지 않아요.', 'err'); return; }
+  if(!cryptoReady()){ setStatus(pwEncStatus, '처리 엔진을 불러오지 못해 암호를 설정할 수 없어요.', 'err'); return; }
+  const btn = document.getElementById('pw-enc-btn');
+  btn.disabled = true;
+  setStatus(pwEncStatus, '암호를 설정하는 중…');
+  try{
+    const outBytes = await pwEncryptBytes(pwEncBytes, pwd1, pwd1);
+    await downloadBlob(outBytes, toPdfName(pwEncFilenameInput.value, 'protected'));
+    setStatus(pwEncStatus, '완료! 암호가 설정된 PDF를 저장했어요.', 'ok');
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(pwEncStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else setStatus(pwEncStatus, '암호를 설정하는 중 오류가 발생했어요.', 'err');
+  }
+  btn.disabled = false;
+});
+
+let pwDecFile = null, pwDecBytes = null;
+const pwDecDrop = document.getElementById('pw-dec-drop');
+const pwDecInput = document.getElementById('pw-dec-input');
+const pwDecBody = document.getElementById('pw-dec-body');
+const pwDecFilenameEl = document.getElementById('pw-dec-filename');
+const pwDecStatus = document.getElementById('pw-dec-status');
+const pwDecFilenameInput = document.getElementById('pw-dec-filename-input');
+
+['dragenter','dragover'].forEach(ev=>pwDecDrop.addEventListener(ev, e=>{e.preventDefault(); pwDecDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>pwDecDrop.addEventListener(ev, e=>{e.preventDefault(); pwDecDrop.classList.remove('drag');}));
+pwDecDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadPwDecFile(e.dataTransfer.files[0]); });
+pwDecInput.addEventListener('change', e=>{ if(e.target.files[0]) loadPwDecFile(e.target.files[0]); pwDecInput.value=''; });
+
+async function loadPwDecFile(file){
+  setStatus(pwDecStatus, '');
+  if(file.size > PW_MAX_SIZE){ setStatus(pwDecStatus, '파일이 너무 커요. 80MB 이하 파일만 지원해요.', 'err'); return; }
+  pwDecFile = file;
+  pwDecFile.arrayBuffer().then(b => pwDecBytes = b);
+  pwDecFilenameEl.textContent = file.name;
+  if(!pwDecFilenameInput.dataset.touched) pwDecFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_unlocked';
+  pwDecBody.style.display = 'block';
+}
+pwDecFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+
+document.getElementById('pw-dec-btn').addEventListener('click', async ()=>{
+  if(!pwDecFile){ setStatus(pwDecStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  if(!cryptoReady()){ setStatus(pwDecStatus, '처리 엔진을 불러오지 못해 암호를 해제할 수 없어요.', 'err'); return; }
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument) return;
+  const btn = document.getElementById('pw-dec-btn');
+  btn.disabled = true;
+  setStatus(pwDecStatus, '암호를 해제하는 중…');
+  try{
+    const bytes = pwDecBytes || await pwDecFile.arrayBuffer();
+    const outBytes = await pwDecryptBytes(bytes, document.getElementById('pw-dec-password').value);
+    await downloadBlob(outBytes, toPdfName(pwDecFilenameInput.value, 'unlocked'));
+    setStatus(pwDecStatus, '완료! 암호가 해제된 PDF를 저장했어요.', 'ok');
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(pwDecStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else if(err && err.code === 'wrong_password') setStatus(pwDecStatus, '암호가 올바르지 않아요. 다시 확인해 주세요.', 'err');
+    else if(err && err.code === 'not_encrypted') setStatus(pwDecStatus, '이 파일은 암호로 보호되어 있지 않아요.', 'err');
+    else setStatus(pwDecStatus, '암호를 해제하는 중 오류가 발생했어요. 암호를 확인해 주세요.', 'err');
+  }
+  btn.disabled = false;
 });
 </script>
 </body>
