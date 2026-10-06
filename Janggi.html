@@ -171,6 +171,45 @@
     .fname { margin-left: 0; width: 100%; }
     .btn { padding: 8px 11px; font-size: 13px; }
   }
+
+  .pos-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-top: 12px;
+  }
+  .pos-panel[hidden] { display: none; }
+  .pos-title { font-weight: 600; font-size: 14px; margin: 0 0 4px; }
+  .pos-hint { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; line-height: 1.5; }
+  .pos-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pos-status { font-size: 12.5px; color: var(--muted); margin: -2px 0 10px; }
+  .pos-sub { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+  .palette-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pbtn {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--piece);
+    font-weight: 700; font-size: 16px; cursor: pointer;
+    font-family: "Noto Serif KR", "Nanum Myeongjo", "Batang", serif;
+    border: 2px solid;
+  }
+  .pbtn.cho { border-color: var(--cho); color: var(--cho); }
+  .pbtn.han { border-color: var(--han); color: var(--han); }
+  .pbtn.activeBrush { outline: 3px solid var(--sel); outline-offset: 2px; }
+  #eraserBtn.activeBrush { outline: 3px solid var(--sel); outline-offset: 2px; }
+  .pos-board-wrap { display: flex; justify-content: center; margin: 10px 0; }
+  svg#posBoard {
+    width: 100%; max-width: 420px; height: auto;
+    border-radius: 10px;
+    background: var(--board);
+    box-shadow: 0 1px 0 var(--board-edge);
+    touch-action: manipulation;
+    user-select: none;
+    cursor: pointer;
+  }
+  .pos-foot { display: flex; gap: 8px; margin-top: 10px; }
+  .pos-foot .btn { flex: 1; }
 </style>
 </head>
 <body>
@@ -195,6 +234,7 @@
     <div class="actions">
       <button class="btn" id="undoBtn">무르기</button>
       <button class="btn" id="newBtn">새 게임</button>
+      <button class="btn" id="posBtn">포지션 설정</button>
     </div>
   </div>
 
@@ -235,6 +275,45 @@
   <div class="legend">
     <span><i class="sw" style="border-color:var(--accent);background:rgba(224,138,42,.25)"></i>상대의 최근 수</span>
     <span><i class="sw" style="border-color:var(--sel)"></i>선택 / 이동 가능</span>
+  </div>
+
+  <div class="pos-panel" id="posPanel" hidden>
+    <p class="pos-title">포지션 설정</p>
+    <p class="pos-hint">사진으로 자동 인식하거나 아래 팔레트로 말을 직접 배치해서, 원하는 상황부터 바로 시작할 수 있습니다. 자동 인식은 틀릴 수 있으니 시작 전에 꼭 확인하세요.</p>
+    <div class="pos-row">
+      <button class="btn" id="photoRecognizeBtn">📷 사진으로 인식</button>
+      <button class="btn" id="loadStandardPosBtn">표준 배치</button>
+      <button class="btn" id="clearPosBtn">전체 지우기</button>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" hidden>
+    <p class="pos-status" id="photoStatus" style="display:none;"></p>
+
+    <p class="pos-sub">한(漢) 팔레트</p>
+    <div class="palette-row" id="paletteHan"></div>
+    <p class="pos-sub">초(楚) 팔레트</p>
+    <div class="palette-row" id="paletteCho"></div>
+    <button class="btn" id="eraserBtn" style="width:100%;margin-bottom:4px;">🧹 지우개 모드 (탭해서 제거)</button>
+
+    <div class="pos-board-wrap">
+      <svg id="posBoard" viewBox="0 0 560 620" xmlns="http://www.w3.org/2000/svg">
+        <g id="posGrid"></g>
+        <g id="posLayer"></g>
+      </svg>
+    </div>
+
+    <p class="pos-sub">내가 둘 진영</p>
+    <div class="seg sm" id="posSideSeg" role="group" aria-label="내가 둘 진영">
+      <button data-v="1">초 (아래 · 붉은색)</button><button data-v="-1">한 (위 · 파란색)</button>
+    </div>
+    <p class="pos-sub">시작 차례</p>
+    <div class="seg sm" id="posTurnSeg" role="group" aria-label="시작 차례">
+      <button data-v="1">초 먼저</button><button data-v="-1">한 먼저</button>
+    </div>
+
+    <div class="pos-foot">
+      <button class="btn primary" id="startFromPosBtn">▶ 이 포지션으로 시작</button>
+      <button class="btn" id="cancelPosBtn">취소</button>
+    </div>
   </div>
 </main>
 
@@ -569,6 +648,7 @@ function think(board, side, level) {
 
   var board, history, turn, gameOver, winner, selected, userMoves, lastAI, checkUser, thinking;
   var searchId = 0, pending = null, worker = null, justMoved = -1;
+  var userSide = 1; // 1 = 내가 초, -1 = 내가 한 (포지션 설정에서만 바뀜; 빠른 새 게임은 항상 초)
   var level = 3;
   try {
     var saved = parseInt(localStorage.getItem('janggi-level5'), 10);
@@ -681,9 +761,9 @@ function think(board, side, level) {
     if (gameOver) {
       statusEl.innerHTML = '<strong>Game Over</strong> · ' + winnerLabel();
     } else if (thinking) {
-      statusEl.innerHTML = '<i class="dot" style="background:var(--han)"></i><span class="thinking">컴퓨터가 생각 중</span>';
+      statusEl.innerHTML = '<i class="dot" style="background:' + sideColorVar(-userSide) + '"></i><span class="thinking">컴퓨터가 생각 중</span>';
     } else {
-      statusEl.innerHTML = '<i class="dot" style="background:var(--cho)"></i><strong>나의 차례</strong>' + (checkUser ? '<span class="warn">장군!</span>' : '');
+      statusEl.innerHTML = '<i class="dot" style="background:' + sideColorVar(userSide) + '"></i><strong>나의 차례</strong>' + (checkUser ? '<span class="warn">장군!</span>' : '');
     }
     movesEl.textContent = LEVEL_NAME[level] + ' · ' + history.length + '수';
 
@@ -697,7 +777,7 @@ function think(board, side, level) {
     });
     document.getElementById('fname').textContent = FORMATION[setup.l + setup.r] +
       (history.length && !gameOver ? ' · 다음 판부터 적용' : '');
-    var canUndo = history.some(function (h) { return h.side === 1; });
+    var canUndo = history.some(function (h) { return h.side === userSide; });
     document.getElementById('undoBtn').disabled = !canUndo;
     document.getElementById('undoBtn2').disabled = !canUndo;
 
@@ -707,17 +787,27 @@ function think(board, side, level) {
     } else overlay.hidden = true;
   }
 
+  function sideName(s) { return s === 1 ? '초' : '한'; }
+  function sideColorVar(s) { return s === 1 ? 'var(--cho)' : 'var(--han)'; }
+
   function winnerLabel() {
-    if (winner === 1) return '승리 · <strong style="color:var(--cho)">나 (초)</strong>';
-    if (winner === -1) return '승리 · <strong style="color:var(--han)">컴퓨터 (한)</strong>';
+    if (winner === userSide) return '승리 · <strong style="color:' + sideColorVar(userSide) + '">나 (' + sideName(userSide) + ')</strong>';
+    if (winner === -userSide) return '승리 · <strong style="color:' + sideColorVar(-userSide) + '">컴퓨터 (' + sideName(-userSide) + ')</strong>';
     return '무승부';
+  }
+
+  function updateSubtitle() {
+    var subEl = document.querySelector('.sub');
+    var mineCls = userSide === 1 ? 'c' : 'h', aiCls = userSide === 1 ? 'h' : 'c';
+    subEl.innerHTML = '<span class="' + mineCls + '">나 · ' + sideName(userSide) + '</span> &nbsp;vs&nbsp; ' +
+      '<span class="' + aiCls + '">컴퓨터 · ' + sideName(-userSide) + '</span>';
   }
 
   function applyMove(m, side) {
     var f = m >> 7, t = m & 127;
     history.push({ m: m, cap: board[t], side: side });
     board[t] = board[f]; board[f] = 0;
-    if (side === -1) lastAI = m;
+    if (side === -userSide) lastAI = m;
     justMoved = t;
     selected = null;
     turn = -side;
@@ -731,9 +821,9 @@ function think(board, side, level) {
     userMoves = null;
     if (!lm.length) { endGame(mover); return; }
     if ((!hasAttackers(board, 1) && !hasAttackers(board, -1)) || history.length >= 400) { endGame(0); return; }
-    if (opp === 1) {
+    if (opp === userSide) {
       userMoves = lm;
-      checkUser = inCheck(board, 1);
+      checkUser = inCheck(board, userSide);
       render();
     } else {
       render();
@@ -772,29 +862,29 @@ function think(board, side, level) {
     } catch (e) { return null; }
   }
   function runLocal(p) {
-    setTimeout(function () { p.done(think(p.board, -1, p.level)); }, 30);
+    setTimeout(function () { p.done(think(p.board, p.side, p.level)); }, 30);
   }
 
   function requestAI() {
     thinking = true;
     render();
-    var id = ++searchId, started = Date.now();
+    var id = ++searchId, started = Date.now(), aiSide = -userSide;
     var req = {
-      id: id, board: Array.from(board), side: -1, level: level,
+      id: id, board: Array.from(board), side: aiSide, level: level,
       done: function (m) {
         if (id !== searchId) return;
         var wait = Math.max(0, 400 - (Date.now() - started));
         setTimeout(function () {
           if (id !== searchId) return;
           thinking = false;
-          if (m < 0) { endGame(1); return; }
-          applyMove(m, -1);
+          if (m < 0) { endGame(userSide); return; }
+          applyMove(m, aiSide);
         }, wait);
       }
     };
     if (worker) {
       pending = req;
-      worker.postMessage({ id: id, board: req.board, side: -1, level: level });
+      worker.postMessage({ id: id, board: req.board, side: aiSide, level: level });
     } else runLocal(req);
   }
 
@@ -810,32 +900,34 @@ function think(board, side, level) {
   // ---- 조작 ----
   function newGame() {
     cancelAI();
+    userSide = 1; // 빠른 새 게임은 항상 내가 초(먼저 둠)
     aiSetup = randomSetup();
     board = initialBoard();
     history = [];
     turn = 1; gameOver = false; winner = null; selected = null; lastAI = null; checkUser = false;
-    userMoves = legalMoves(board, 1);
+    userMoves = legalMoves(board, userSide);
+    updateSubtitle();
     render();
   }
 
   function undo() {
-    if (!history.some(function (h) { return h.side === 1; })) return;
+    if (!history.some(function (h) { return h.side === userSide; })) return;
     cancelAI();
     while (history.length) {
       var h = history.pop(), f = h.m >> 7, t = h.m & 127;
       board[f] = board[t]; board[t] = h.cap;
-      if (h.side === 1) break;
+      if (h.side === userSide) break;
     }
     lastAI = null;
-    for (var i = history.length - 1; i >= 0; i--) if (history[i].side === -1) { lastAI = history[i].m; break; }
-    turn = 1; gameOver = false; winner = null; selected = null;
-    userMoves = legalMoves(board, 1);
-    checkUser = inCheck(board, 1);
+    for (var i = history.length - 1; i >= 0; i--) if (history[i].side === -userSide) { lastAI = history[i].m; break; }
+    turn = userSide; gameOver = false; winner = null; selected = null;
+    userMoves = legalMoves(board, userSide);
+    checkUser = inCheck(board, userSide);
     render();
   }
 
-  function pointToIndex(e) {
-    var rect = svg.getBoundingClientRect();
+  function pointToIndex(svgEl, e) {
+    var rect = svgEl.getBoundingClientRect();
     var x = (e.clientX - rect.left) / rect.width * 560;
     var y = (e.clientY - rect.top) / rect.height * 620;
     var c = Math.round((x - M) / S), r = Math.round((y - M) / S);
@@ -845,14 +937,15 @@ function think(board, side, level) {
   }
 
   svg.addEventListener('click', function (e) {
-    if (gameOver || thinking || turn !== 1 || !userMoves) return;
-    var idx = pointToIndex(e);
+    if (gameOver || thinking || turn !== userSide || !userMoves) return;
+    var idx = pointToIndex(svg, e);
     if (idx < 0) { selected = null; render(); return; }
     if (selected != null) {
       var m = (selected << 7) | idx;
-      if (userMoves.indexOf(m) >= 0) { applyMove(m, 1); return; }
+      if (userMoves.indexOf(m) >= 0) { applyMove(m, userSide); return; }
     }
-    selected = (board[idx] > 0 && selected !== idx) ? idx : null;
+    var isMine = board[idx] !== 0 && ((board[idx] > 0) === (userSide > 0));
+    selected = (isMine && selected !== idx) ? idx : null;
     render();
   });
 
@@ -880,6 +973,236 @@ function think(board, side, level) {
   document.getElementById('undoBtn2').addEventListener('click', undo);
   document.getElementById('newBtn').addEventListener('click', newGame);
   document.getElementById('newBtn2').addEventListener('click', newGame);
+
+  /* ============================================================
+     포지션 에디터 (사진 인식 / 직접 배치로 시작하기)
+     ============================================================ */
+  var posPanel = document.getElementById('posPanel');
+  var posSvg = document.getElementById('posBoard');
+  var posLayer = document.getElementById('posLayer');
+  var photoStatus = document.getElementById('photoStatus');
+  var edBoard = null;        // 90칸 배열, 메인 board와 동일한 부호*기물 인코딩
+  var edUserSide = 1;
+  var edStartTurn = 1;
+  var edBrush = null;        // 부호*기물 정수 값, 또는 null/'erase' (지우개)
+  var edBrushBtn = null;
+
+  // 에디터용 보드 격자 (한 번만 그림)
+  (function drawPosGrid() {
+    var g = '';
+    var col = 'var(--line)';
+    g += '<rect x="' + (M - 14) + '" y="' + (M - 14) + '" width="' + (8 * S + 28) + '" height="' + (9 * S + 28) + '" fill="none" stroke="' + col + '" stroke-opacity=".35" stroke-width="1" rx="4"/>';
+    for (var r = 0; r < 10; r++) g += '<line x1="' + X(0) + '" y1="' + Y(r) + '" x2="' + X(8) + '" y2="' + Y(r) + '" stroke="' + col + '" stroke-width="1.2"/>';
+    for (var c = 0; c < 9; c++) g += '<line x1="' + X(c) + '" y1="' + Y(0) + '" x2="' + X(c) + '" y2="' + Y(9) + '" stroke="' + col + '" stroke-width="1.2"/>';
+    g += '<rect x="' + X(0) + '" y="' + Y(0) + '" width="' + 8 * S + '" height="' + 9 * S + '" fill="none" stroke="' + col + '" stroke-width="2.4"/>';
+    [[3, 0, 5, 2], [5, 0, 3, 2], [3, 7, 5, 9], [5, 7, 3, 9]].forEach(function (d) {
+      g += '<line x1="' + X(d[0]) + '" y1="' + Y(d[1]) + '" x2="' + X(d[2]) + '" y2="' + Y(d[3]) + '" stroke="' + col + '" stroke-width="1.2"/>';
+    });
+    document.getElementById('posGrid').innerHTML = g;
+  })();
+
+  function emptyPosBoard() { return new Array(90).fill(0); }
+
+  function renderPosBoard() {
+    var h = '';
+    for (var i = 0; i < 90; i++) {
+      var p = edBoard[i];
+      if (!p) continue;
+      var t = Math.abs(p), side = p > 0 ? 1 : -1, x = X(i % 9), y = Y((i / 9) | 0), rad = radius(t), color = sideColorVar(side);
+      h += '<g class="pc">';
+      h += '<polygon points="' + octagon(x, y, rad) + '" fill="var(--piece)" stroke="' + color + '" stroke-width="2"/>';
+      h += '<text x="' + x + '" y="' + (y + 1) + '" font-size="' + (rad * 1.05).toFixed(1) + '" fill="' + color + '">' + CH[side][t] + '</text>';
+      h += '</g>';
+    }
+    posLayer.innerHTML = h;
+  }
+
+  function buildPalette() {
+    var hanWrap = document.getElementById('paletteHan'), choWrap = document.getElementById('paletteCho');
+    hanWrap.innerHTML = ''; choWrap.innerHTML = '';
+    var types = [K, A, R, C, N, E, P];
+    types.forEach(function (t) {
+      var hb = document.createElement('button');
+      hb.className = 'pbtn han';
+      hb.textContent = CH[-1][t];
+      hb.addEventListener('click', function () { setBrush(-t, hb); });
+      hanWrap.appendChild(hb);
+
+      var cb = document.createElement('button');
+      cb.className = 'pbtn cho';
+      cb.textContent = CH[1][t];
+      cb.addEventListener('click', function () { setBrush(t, cb); });
+      choWrap.appendChild(cb);
+    });
+  }
+  function setBrush(v, btnEl) {
+    edBrush = v;
+    if (edBrushBtn) edBrushBtn.classList.remove('activeBrush');
+    btnEl.classList.add('activeBrush');
+    edBrushBtn = btnEl;
+    document.getElementById('eraserBtn').classList.remove('activeBrush');
+  }
+  document.getElementById('eraserBtn').addEventListener('click', function (e) {
+    edBrush = 'erase';
+    if (edBrushBtn) edBrushBtn.classList.remove('activeBrush');
+    edBrushBtn = null;
+    e.currentTarget.classList.add('activeBrush');
+  });
+
+  posSvg.addEventListener('click', function (e) {
+    var idx = pointToIndex(posSvg, e);
+    if (idx < 0) return;
+    edBoard[idx] = (edBrush === null || edBrush === 'erase') ? 0 : edBrush;
+    renderPosBoard();
+  });
+
+  function updatePosSideButtons() {
+    document.querySelectorAll('#posSideSeg button').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(+btn.dataset.v === edUserSide));
+    });
+  }
+  function updatePosTurnButtons() {
+    document.querySelectorAll('#posTurnSeg button').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(+btn.dataset.v === edStartTurn));
+    });
+  }
+  document.querySelectorAll('#posSideSeg button').forEach(function (btn) {
+    btn.addEventListener('click', function () { edUserSide = +btn.dataset.v; updatePosSideButtons(); });
+  });
+  document.querySelectorAll('#posTurnSeg button').forEach(function (btn) {
+    btn.addEventListener('click', function () { edStartTurn = +btn.dataset.v; updatePosTurnButtons(); });
+  });
+
+  document.getElementById('loadStandardPosBtn').addEventListener('click', function () {
+    var tmpSetup = { l: 'EN', r: 'EN' };
+    var l = pair(tmpSetup.l), r = pair(tmpSetup.r);
+    var back = [R, l[0], l[1], A, 0, A, r[0], r[1], R];
+    edBoard = emptyPosBoard();
+    for (var c = 0; c < 9; c++) { edBoard[c] = -back[c]; edBoard[81 + c] = back[c]; }
+    edBoard[13] = -K; edBoard[76] = K;
+    edBoard[19] = edBoard[25] = -C; edBoard[64] = edBoard[70] = C;
+    [0, 2, 4, 6, 8].forEach(function (c) { edBoard[27 + c] = -P; edBoard[54 + c] = P; });
+    renderPosBoard();
+  });
+  document.getElementById('clearPosBtn').addEventListener('click', function () {
+    edBoard = emptyPosBoard();
+    renderPosBoard();
+  });
+
+  function openPositionPanel() {
+    edBoard = emptyPosBoard();
+    edUserSide = 1;
+    edStartTurn = 1;
+    edBrush = null;
+    edBrushBtn = null;
+    document.getElementById('eraserBtn').classList.remove('activeBrush');
+    buildPalette();
+    renderPosBoard();
+    updatePosSideButtons();
+    updatePosTurnButtons();
+    photoStatus.style.display = 'none';
+    posPanel.hidden = false;
+    if (typeof posPanel.scrollIntoView === 'function') {
+      posPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+  document.getElementById('posBtn').addEventListener('click', openPositionPanel);
+  document.getElementById('cancelPosBtn').addEventListener('click', function () { posPanel.hidden = true; });
+
+  document.getElementById('startFromPosBtn').addEventListener('click', function () {
+    var hasHanKing = edBoard.indexOf(-K) >= 0, hasChoKing = edBoard.indexOf(K) >= 0;
+    if (!hasHanKing || !hasChoKing) {
+      photoStatus.textContent = '양쪽 궁(초의 楚, 한의 漢)이 모두 있어야 시작할 수 있어요.';
+      photoStatus.style.display = 'block';
+      return;
+    }
+    cancelAI();
+    userSide = edUserSide;
+    board = Int8Array.from(edBoard);
+    history = [];
+    turn = edStartTurn;
+    gameOver = false; winner = null; selected = null; lastAI = null; checkUser = false;
+    updateSubtitle();
+    posPanel.hidden = true;
+    if (turn === userSide) {
+      userMoves = legalMoves(board, userSide);
+      checkUser = inCheck(board, userSide);
+      render();
+    } else {
+      userMoves = null;
+      render();
+      requestAI();
+    }
+  });
+
+  /* ---------- 사진으로 포지션 자동 인식 (sample 기능 사용 가능할 때만) ---------- */
+  var sampleAPI = null, sampleImageLimits = null;
+  (async function () {
+    try {
+      if (window.claude && typeof window.claude.use === 'function') {
+        sampleAPI = await window.claude.use('sample');
+        if (sampleAPI) { try { sampleImageLimits = await sampleAPI.limits(); } catch (e) { sampleImageLimits = null; } }
+      }
+    } catch (e) { sampleAPI = null; }
+  })();
+
+  var TYPE_BY_HANGUL = { '궁': K, '사': A, '차': R, '포': C, '마': N, '상': E, '졸': P, '병': P };
+
+  function buildRecognitionPrompt() {
+    return [
+      '첨부된 사진은 한국 장기(Janggi) 보드의 현재 상황입니다.',
+      '보드를 세로 10줄(row 0~9, row 0이 가장 위쪽 "한(漢)" 진영, row 9가 가장 아래쪽 "초(楚)" 진영), 가로 9칸(col 0~8, 왼쪽부터)의 교차점 좌표계로 인식해 주세요.',
+      '각 말의 종류는 다음 한글 한 글자 중 하나로 표기합니다: 궁, 사, 차, 포, 마, 상, 졸(한 진영의 병사), 병(초 진영의 병사).',
+      '각 말의 소속(side)은 "han"(한, 보통 위쪽·파란색/검정 계열 글자) 또는 "cho"(초, 보통 아래쪽·빨간색 계열 글자) 중 하나로 표기합니다.',
+      '사진에 "나의 차례" 또는 "상대 차례" 같은 차례 표시가 보이면, 그것이 한과 초 중 어느 쪽 차례인지 유추해서 turn 필드에 넣어 주세요. 확실하지 않으면 "unknown"으로 표기하세요.',
+      '보이는 말만 포함하고, 다음 JSON 형식으로만 답하세요. 다른 설명은 절대 넣지 마세요:',
+      '{"pieces": [{"row": 0, "col": 4, "type": "궁", "side": "han"}], "turn": "han"}'
+    ].join('\n');
+  }
+
+  function applyRecognizedBoard(data) {
+    if (!data || !Array.isArray(data.pieces)) throw new Error('bad shape');
+    var nb = emptyPosBoard();
+    for (var i = 0; i < data.pieces.length; i++) {
+      var p = data.pieces[i];
+      var r = Number(p && p.row), c = Number(p && p.col);
+      if (!(r >= 0 && r <= 9 && c >= 0 && c <= 8)) continue;
+      var side = (p && p.side === 'han') ? -1 : (p && p.side === 'cho') ? 1 : null;
+      if (!side) continue;
+      var t = TYPE_BY_HANGUL[p && p.type];
+      if (!t) continue;
+      nb[r * 9 + c] = t * side;
+    }
+    edBoard = nb;
+    renderPosBoard();
+    if (data.turn === 'han') { edStartTurn = -1; updatePosTurnButtons(); }
+    else if (data.turn === 'cho') { edStartTurn = 1; updatePosTurnButtons(); }
+  }
+
+  document.getElementById('photoRecognizeBtn').addEventListener('click', function () {
+    if (!sampleAPI || !sampleImageLimits || !sampleImageLimits.images) {
+      photoStatus.textContent = '이 환경에서는 사진 자동 인식을 사용할 수 없어요. 위 팔레트로 직접 배치해 주세요.';
+      photoStatus.style.display = 'block';
+      return;
+    }
+    document.getElementById('photoInput').click();
+  });
+
+  document.getElementById('photoInput').addEventListener('change', async function (ev) {
+    var file = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!file || !sampleAPI) return;
+    photoStatus.style.display = 'block';
+    photoStatus.textContent = '사진에서 장기판을 인식하는 중... (최대 1분 정도 걸릴 수 있어요)';
+    try {
+      var data = await sampleAPI.json(buildRecognitionPrompt(), { images: file, modelTier: 'default', cache: false });
+      applyRecognizedBoard(data);
+      photoStatus.textContent = '인식 완료! 틀리게 인식된 말이 있으면 팔레트로 직접 고쳐 주세요.';
+    } catch (e) {
+      var code = (e && e.code) ? e.code : 'error';
+      photoStatus.textContent = '인식에 실패했습니다 (' + code + '). 팔레트로 직접 배치해 주세요.';
+    }
+  });
 
   worker = makeWorker();
   newGame();
