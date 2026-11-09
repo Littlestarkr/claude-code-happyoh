@@ -150,6 +150,22 @@
   }
   .group-row .group-del{border:none; background:none; color:var(--danger); font-size:1.1rem; cursor:pointer; padding:2px 4px;}
   .group-row .group-status{flex-basis:100%; order:4; font-size:.78rem; color:var(--sub); min-height:1em;}
+  /* 편집(서명·이미지 넣기) */
+  .edit-stage{position:relative; margin:12px auto 0; border:1px solid var(--border); background:#fff; line-height:0; user-select:none; -webkit-user-select:none; overflow:hidden;}
+  .edit-stage canvas{display:block;}
+  .edit-item{position:absolute; border:1.5px dashed var(--accent); touch-action:none; cursor:move; line-height:0;}
+  .edit-item img{width:100%; height:100%; display:block; pointer-events:none; -webkit-user-drag:none;}
+  .edit-item .rh{
+    position:absolute; right:-2px; bottom:-2px; width:24px; height:24px; border-radius:50%;
+    background:var(--accent); border:2px solid #fff; cursor:nwse-resize; touch-action:none;
+  }
+  .edit-item .del{
+    position:absolute; right:-2px; top:-2px; width:24px; height:24px; border-radius:50%;
+    background:var(--danger); color:#fff; border:2px solid #fff; font-size:12px; line-height:20px;
+    text-align:center; cursor:pointer; padding:0; touch-action:manipulation;
+  }
+  .check-row{display:flex; align-items:center; gap:8px; margin-top:12px; font-size:.9rem; cursor:pointer;}
+  .check-row input{width:18px; height:18px;}
   .footer{
     margin-top:32px; padding-top:20px; border-top:1px solid var(--border);
     text-align:center;
@@ -177,6 +193,7 @@
     <div class="tab" data-tab="move">페이지 이동</div>
     <div class="tab" data-tab="insert">페이지 추가</div>
     <div class="tab" data-tab="rotate">페이지 회전</div>
+    <div class="tab" data-tab="edit">편집</div>
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
     <div class="tab" data-tab="password">암호넣기</div>
   </div>
@@ -357,6 +374,34 @@
         </div>
         <button class="btn" id="rotate-save-btn">저장</button>
         <div class="status" id="rotate-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 편집 (서명·이미지 넣기) -->
+  <div class="panel" id="panel-edit">
+    <div class="card">
+      <label class="drop" id="edit-drop" for="edit-input">
+        편집할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+        <input type="file" id="edit-input" accept="application/pdf">
+      </label>
+      <div id="edit-body" style="display:none;">
+        <p class="hint" id="edit-filename"></p>
+        <div class="btn-row" style="align-items:center;">
+          <button class="btn secondary" id="edit-prev" style="flex:0 0 72px;">◀</button>
+          <div id="edit-pageinfo" style="flex:1; text-align:center; font-weight:600;">1 / 1</div>
+          <button class="btn secondary" id="edit-next" style="flex:0 0 72px;">▶</button>
+        </div>
+        <div class="edit-stage" id="edit-stage"></div>
+        <label class="btn secondary" for="edit-img-input" style="display:block; text-align:center; cursor:pointer;">✍️ 서명·이미지 넣기 (현재 쪽)</label>
+        <input type="file" id="edit-img-input" accept="image/jpeg,image/png">
+        <label class="check-row"><input type="checkbox" id="edit-removebg" checked> 배경 지우기 (흰 종이에 쓴 서명 사진용)</label>
+        <p class="hint">서명을 종이에 써서 찍은 사진을 올리면 종이 배경이 지워지고 글씨만 남아요. 이미지를 끌어서 위치를 옮기고, 오른쪽 아래 파란 점으로 크기를 조절하세요. 빨간 ✕는 삭제예요. 쪽마다 따로 넣을 수 있어요.</p>
+        <div class="range-row" style="margin-top:12px;">
+          <input type="text" id="edit-filename-input" placeholder="저장할 파일 이름">
+        </div>
+        <button class="btn" id="edit-save-btn">저장</button>
+        <div class="status" id="edit-status"></div>
       </div>
     </div>
   </div>
@@ -1481,6 +1526,331 @@ rotateSaveBtn.addEventListener('click', async ()=>{
     else setStatus(rotateStatus, '처리 중 오류가 발생했어요.', 'err');
   }
   rotateSaveBtn.disabled = false;
+});
+
+// ---------- 편집 (서명·이미지 넣기) ----------
+// 항목 좌표는 "보이는 페이지"(회전 반영)의 비율값: u,v = 왼쪽 위 위치, w = 너비, ratio = 이미지 높이/너비
+let editBytes = null, editPdfjsDoc = null, editPageCount = 0, editPage = 1, editFile = null;
+let editItems = [], editSeq = 0, editRenderToken = 0, editStageW = 0, editStageH = 0;
+
+const editDrop = document.getElementById('edit-drop');
+const editInput = document.getElementById('edit-input');
+const editBody = document.getElementById('edit-body');
+const editStage = document.getElementById('edit-stage');
+const editStatus = document.getElementById('edit-status');
+const editFilenameInput = document.getElementById('edit-filename-input');
+const editSaveBtn = document.getElementById('edit-save-btn');
+
+['dragenter','dragover'].forEach(ev=>editDrop.addEventListener(ev, e=>{e.preventDefault(); editDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>editDrop.addEventListener(ev, e=>{e.preventDefault(); editDrop.classList.remove('drag');}));
+editDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadEditFile(e.dataTransfer.files[0]); });
+editInput.addEventListener('change', e=>{ if(e.target.files[0]) loadEditFile(e.target.files[0]); editInput.value=''; });
+editFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+
+async function loadEditFile(file){
+  setStatus(editStatus, '');
+  if(typeof pdfjsLib === 'undefined' || window.__pdfjsFailed || !getPDFDocument()){
+    setStatus(editStatus, '처리 엔진을 불러오지 못해 열 수 없어요. 위 안내를 확인해 주세요.', 'err'); return;
+  }
+  try{
+    const bytes = await file.arrayBuffer();
+    // pdf-lib으로 열 수 있는 파일인지 먼저 확인(암호 파일 등은 여기서 걸러짐)
+    const test = await PDFLib.PDFDocument.load(bytes, {ignoreEncryption:true});
+    editPageCount = test.getPageCount();
+    editBytes = bytes.slice(0);
+    editPdfjsDoc = await pdfjsLib.getDocument({data: bytes.slice(0)}).promise;
+    editItems.forEach(it=>URL.revokeObjectURL(it.url));
+    editItems = []; editPage = 1; editFile = file;
+    document.getElementById('edit-filename').textContent = `${file.name} · 총 ${editPageCount}쪽`;
+    if(!editFilenameInput.dataset.touched) editFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_edited';
+    editBody.style.display = 'block';
+    await renderEditPage();
+  }catch(err){
+    console.error(err);
+    setStatus(editStatus, 'PDF를 여는 중 오류가 발생했어요. 비밀번호로 보호된 파일은 지원하지 않습니다.', 'err');
+  }
+}
+
+async function renderEditPage(){
+  if(!editPdfjsDoc) return;
+  const token = ++editRenderToken;
+  document.getElementById('edit-pageinfo').textContent = `${editPage} / ${editPageCount}`;
+  const page = await editPdfjsDoc.getPage(editPage);
+  const vp1 = page.getViewport({scale:1});
+  const avail = Math.max(200, Math.min(editBody.clientWidth || 600, 640));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const viewport = page.getViewport({scale: avail / vp1.width * dpr});
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height);
+  canvas.style.width = avail + 'px';
+  canvas.style.height = Math.round(avail * vp1.height / vp1.width) + 'px';
+  await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
+  if(token !== editRenderToken) return;   // 그 사이 다른 쪽으로 넘어갔으면 버림
+  editStageW = avail; editStageH = Math.round(avail * vp1.height / vp1.width);
+  editStage.style.width = editStageW + 'px';
+  editStage.style.height = editStageH + 'px';
+  editStage.innerHTML = '';
+  editStage.appendChild(canvas);
+  editItems.filter(it=>it.page === editPage).forEach(addEditItemEl);
+}
+
+function placeEditItemEl(it){
+  const el = it.el; if(!el) return;
+  el.style.left = (it.u * editStageW) + 'px';
+  el.style.top = (it.v * editStageH) + 'px';
+  el.style.width = (it.w * editStageW) + 'px';
+  el.style.height = (it.w * editStageW * it.ratio) + 'px';
+}
+
+function addEditItemEl(it){
+  const el = document.createElement('div');
+  el.className = 'edit-item';
+  el.innerHTML = `<img src="${it.url}" alt=""><button class="del" type="button" title="삭제">✕</button><div class="rh"></div>`;
+  it.el = el;
+  placeEditItemEl(it);
+  editStage.appendChild(el);
+
+  const clampItem = ()=>{
+    const hFrac = it.w * editStageW * it.ratio / editStageH;
+    it.u = Math.min(Math.max(0, it.u), Math.max(0, 1 - it.w));
+    it.v = Math.min(Math.max(0, it.v), Math.max(0, 1 - hFrac));
+  };
+  let mode = null, sx = 0, sy = 0, su = 0, sv = 0, sw = 0;
+  el.addEventListener('pointerdown', e=>{
+    if(e.target.classList.contains('del')) return;
+    mode = e.target.classList.contains('rh') ? 'resize' : 'move';
+    sx = e.clientX; sy = e.clientY; su = it.u; sv = it.v; sw = it.w;
+    el.setPointerCapture(e.pointerId);
+    e.preventDefault(); e.stopPropagation();
+  });
+  el.addEventListener('pointermove', e=>{
+    if(!mode) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if(mode === 'move'){
+      it.u = su + dx / editStageW; it.v = sv + dy / editStageH;
+      clampItem();
+    }else{
+      const minW = 24 / editStageW;
+      let w = sw + dx / editStageW;
+      w = Math.max(minW, Math.min(w, 1 - it.u));
+      // 아래로 삐져나가지 않게 높이도 제한
+      const maxWByH = (1 - it.v) * editStageH / it.ratio / editStageW;
+      it.w = Math.max(minW, Math.min(w, maxWByH));
+    }
+    placeEditItemEl(it);
+  });
+  const end = ()=>{ mode = null; };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.querySelector('.del').addEventListener('click', e=>{
+    e.stopPropagation();
+    editItems = editItems.filter(x=>x !== it);
+    URL.revokeObjectURL(it.url);
+    el.remove();
+    setStatus(editStatus, '삭제했어요.', '');
+  });
+}
+
+document.getElementById('edit-prev').addEventListener('click', ()=>{
+  if(editPage > 1){ editPage--; renderEditPage(); }
+});
+document.getElementById('edit-next').addEventListener('click', ()=>{
+  if(editPage < editPageCount){ editPage++; renderEditPage(); }
+});
+let editResizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(editResizeTimer);
+  editResizeTimer = setTimeout(()=>{
+    if(editPdfjsDoc && document.getElementById('panel-edit').classList.contains('active')) renderEditPage();
+  }, 250);
+});
+
+// 종이 사진에서 "글씨(잉크)"만 남기고 배경을 투명하게 만든다.
+// 조명 때문에 종이 밝기가 고르지 않아도 되도록, 칸(cell)별 종이 밝기를 추정해서 그 값 대비 어두운 정도로 판단한다.
+function extractInkCanvas(src){
+  let w = src.width, h = src.height;
+  const maxDim = 1600;
+  let work = src;
+  if(Math.max(w,h) > maxDim){
+    const s = maxDim / Math.max(w,h);
+    work = document.createElement('canvas');
+    work.width = Math.round(w*s); work.height = Math.round(h*s);
+    work.getContext('2d').drawImage(src, 0, 0, work.width, work.height);
+    w = work.width; h = work.height;
+  }
+  const data = work.getContext('2d').getImageData(0,0,w,h).data;
+  const gray = new Float32Array(w*h);
+  for(let i=0,p=0;i<gray.length;i++,p+=4) gray[i] = (data[p]+data[p+1]+data[p+2])/3;
+
+  // 칸별 종이 밝기: 각 칸에서 밝은 쪽 85% 지점 값
+  const cell = Math.max(8, Math.round(Math.max(w,h)/48));
+  const gw = Math.ceil(w/cell), gh = Math.ceil(h/cell);
+  let grid = new Float32Array(gw*gh);
+  const hist = new Uint32Array(256);
+  for(let gy=0;gy<gh;gy++){
+    for(let gx=0;gx<gw;gx++){
+      hist.fill(0);
+      let cnt = 0;
+      const x1 = Math.min(w,(gx+1)*cell), y1 = Math.min(h,(gy+1)*cell);
+      for(let y=gy*cell;y<y1;y++){
+        for(let x=gx*cell;x<x1;x++){ hist[gray[y*w+x]|0]++; cnt++; }
+      }
+      const target = cnt * 0.15; let acc = 0, v = 255;
+      for(let b=255;b>=0;b--){ acc += hist[b]; if(acc >= target){ v = b; break; } }
+      grid[gy*gw+gx] = Math.max(v, 1);
+    }
+  }
+  // 3x3 평균으로 부드럽게
+  const sm = new Float32Array(gw*gh);
+  for(let gy=0;gy<gh;gy++){
+    for(let gx=0;gx<gw;gx++){
+      let s = 0, n = 0;
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          const yy = gy+dy, xx = gx+dx;
+          if(yy>=0&&yy<gh&&xx>=0&&xx<gw){ s += grid[yy*gw+xx]; n++; }
+        }
+      }
+      sm[gy*gw+gx] = s/n;
+    }
+  }
+  grid = sm;
+
+  const alpha = new Uint8ClampedArray(w*h);
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for(let y=0;y<h;y++){
+    const fy = Math.min(Math.max(y/cell - 0.5, 0), gh-1), y0 = Math.floor(fy), y1 = Math.min(y0+1, gh-1), ty = fy - y0;
+    for(let x=0;x<w;x++){
+      const fx = Math.min(Math.max(x/cell - 0.5, 0), gw-1), x0 = Math.floor(fx), x1 = Math.min(x0+1, gw-1), tx = fx - x0;
+      const bg = (grid[y0*gw+x0]*(1-tx) + grid[y0*gw+x1]*tx)*(1-ty) + (grid[y1*gw+x0]*(1-tx) + grid[y1*gw+x1]*tx)*ty;
+      const n = gray[y*w+x] / bg;
+      let a = (0.88 - n) / 0.35;
+      a = a < 0 ? 0 : (a > 1 ? 1 : a);
+      alpha[y*w+x] = a*255;
+      if(a > 0.3){
+        if(x<minX) minX=x; if(x>maxX) maxX=x; if(y<minY) minY=y; if(y>maxY) maxY=y;
+      }
+    }
+  }
+  if(maxX < 0) return null;   // 글씨를 못 찾음
+  const pad = Math.round(Math.max(w,h) * 0.012);
+  minX = Math.max(0, minX-pad); minY = Math.max(0, minY-pad);
+  maxX = Math.min(w-1, maxX+pad); maxY = Math.min(h-1, maxY+pad);
+  const cw = maxX-minX+1, ch = maxY-minY+1;
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  const octx = out.getContext('2d');
+  const img = octx.createImageData(cw, ch);
+  for(let y=0;y<ch;y++){
+    for(let x=0;x<cw;x++){
+      const o = (y*cw+x)*4;
+      img.data[o] = 20; img.data[o+1] = 20; img.data[o+2] = 40;
+      img.data[o+3] = alpha[(y+minY)*w + (x+minX)];
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  return out;
+}
+
+function canvasToBlob(canvas, type, q){
+  return new Promise((resolve, reject)=>canvas.toBlob(b=> b ? resolve(b) : reject(new Error('toBlob 실패')), type, q));
+}
+function blobImageSize(blob){
+  return new Promise((resolve, reject)=>{
+    const url = URL.createObjectURL(blob);
+    const im = new Image();
+    im.onload = ()=>{ resolve({w: im.naturalWidth, h: im.naturalHeight}); URL.revokeObjectURL(url); };
+    im.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('이미지를 읽을 수 없어요')); };
+    im.src = url;
+  });
+}
+
+document.getElementById('edit-img-input').addEventListener('change', async e=>{
+  const f = e.target.files[0]; e.target.value = '';
+  if(f) await addEditImage(f);
+});
+
+async function addEditImage(file){
+  if(!editPdfjsDoc){ setStatus(editStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  setStatus(editStatus, '이미지를 처리하는 중…');
+  try{
+    const removeBg = document.getElementById('edit-removebg').checked;
+    let blob, kind, size;
+    if(removeBg){
+      const src = await fileToOrientedCanvas(file);
+      const ink = extractInkCanvas(src);
+      if(!ink){ setStatus(editStatus, '이미지에서 글씨를 찾지 못했어요. 종이가 선명하게 나온 사진인지 확인하거나 "배경 지우기"를 끄고 다시 시도해 보세요.', 'err'); return; }
+      // 너무 크면 줄여서 PDF 용량을 아낌
+      let out = ink;
+      if(ink.width > 1000){
+        out = document.createElement('canvas');
+        out.width = 1000; out.height = Math.round(ink.height * 1000 / ink.width);
+        out.getContext('2d').drawImage(ink, 0, 0, out.width, out.height);
+      }
+      blob = await canvasToBlob(out, 'image/png'); kind = 'png'; size = {w: out.width, h: out.height};
+    }else if(file.type === 'image/png'){
+      blob = file; kind = 'png'; size = await blobImageSize(file);
+    }else{
+      const c = await fileToOrientedCanvas(file);   // EXIF 방향 반영
+      blob = await canvasToBlob(c, 'image/jpeg', 0.92); kind = 'jpg'; size = {w: c.width, h: c.height};
+    }
+    const w = kind === 'png' && removeBg ? 0.28 : 0.3;
+    const ratio = size.h / size.w;
+    const hFrac = w * editStageW * ratio / editStageH;
+    const it = {
+      id: ++editSeq, page: editPage, kind, blob, url: URL.createObjectURL(blob),
+      ratio, w, u: (1 - w) / 2, v: Math.max(0, (1 - hFrac) / 2), el: null
+    };
+    editItems.push(it);
+    addEditItemEl(it);
+    setStatus(editStatus, '넣었어요. 끌어서 위치를, 파란 점으로 크기를 맞춘 뒤 저장하세요.', 'ok');
+  }catch(err){
+    console.error(err);
+    setStatus(editStatus, '이미지를 처리하는 중 오류가 발생했어요.', 'err');
+  }
+}
+
+editSaveBtn.addEventListener('click', async ()=>{
+  if(!editBytes){ setStatus(editStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  if(editItems.length === 0){ setStatus(editStatus, '넣은 서명·이미지가 없어요. 먼저 이미지를 넣어주세요.', 'err'); return; }
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(editStatus, '처리 엔진을 불러오지 못해 저장할 수 없어요.', 'err'); return; }
+  editSaveBtn.disabled = true;
+  setStatus(editStatus, '저장하는 중…');
+  try{
+    const doc = await PDFDocument.load(editBytes.slice(0), {ignoreEncryption:true});
+    const embedded = new Map();
+    for(const it of editItems){
+      const buf = new Uint8Array(await it.blob.arrayBuffer());
+      embedded.set(it.id, it.kind === 'png' ? await doc.embedPng(buf) : await doc.embedJpg(buf));
+    }
+    for(const it of editItems){
+      const page = doc.getPage(it.page - 1);
+      const cb = page.getCropBox();
+      const W = cb.width, H = cb.height;
+      const R = ((page.getRotation().angle % 360) + 360) % 360;
+      const sideways = (R === 90 || R === 270);
+      const Wv = sideways ? H : W, Hv = sideways ? W : H;   // 화면에 보이는 크기(pt)
+      const pw = it.w * Wv, ph = pw * it.ratio;
+      const pu = it.u * Wv, pv = it.v * Hv + ph;            // 이미지 왼쪽 아래 모서리(보이는 좌표, 왼쪽 위 기준)
+      let X, Y;                                             // 회전 전 페이지 좌표(왼쪽 위 기준)
+      if(R === 90){ X = pv; Y = H - pu; }
+      else if(R === 180){ X = W - pu; Y = H - pv; }
+      else if(R === 270){ X = W - pv; Y = pu; }
+      else { X = pu; Y = pv; }
+      page.drawImage(embedded.get(it.id), {
+        x: cb.x + X, y: cb.y + (H - Y), width: pw, height: ph, rotate: PDFLib.degrees(R)
+      });
+    }
+    const bytes = await doc.save();
+    await downloadBlob(bytes, toPdfName(editFilenameInput.value, 'edited'));
+    setStatus(editStatus, '완료! 편집한 PDF를 저장했어요.', 'ok');
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(editStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else setStatus(editStatus, '저장 중 오류가 발생했어요.', 'err');
+  }
+  editSaveBtn.disabled = false;
 });
 
 // ---------- 이미지 -> PDF ----------
