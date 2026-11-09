@@ -2692,11 +2692,12 @@ function scanClearEdgeBands(dst){
   };
   const rowDark = y=>{ let n = 0; for(let x=0;x<w;x++) if(lum(x,y) < 110) n++; return n / w; };
   const colDark = x=>{ let n = 0; for(let y=0;y<h;y++) if(lum(x,y) < 110) n++; return n / h; };
-  // 가장자리에서 시작해 연속해서 어두운 줄이 이어지는 끝까지 찾는다(작은 끊김 3줄까지 허용)
+  // 가장자리 5% 안에서 길게 이어진 어두운 줄(테두리 선·띠)이 있으면, 그 바깥은 전부 지운다.
+  // 선 앞쪽에 흰 여백이 끼어 있어도 찾도록, 중간에 끊겨도 계속 본다.
   const band = (len, maxN, fracAt)=>{
-    let last = -1, gap = 0;
+    let last = -1;
     for(let i=0; i<maxN && i<len; i++){
-      if(fracAt(i) > 0.3){ last = i; gap = 0; } else if(++gap > 5) break;
+      if(fracAt(i) > 0.35) last = i;
     }
     return last + 1;    // 지울 줄 수
   };
