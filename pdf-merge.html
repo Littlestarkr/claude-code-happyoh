@@ -2516,10 +2516,11 @@ function scanProcess(inst, filterType, quality){
     const pts = inst.pts.map(p=>({x: p.x*natW, y: p.y*natH}));
     const [tl, tr, br, bl] = pts;
     const dist = (a, b)=>Math.hypot(a.x - b.x, a.y - b.y);
-    const targetW = Math.max(1, Math.round((dist(tl,tr) + dist(bl,br)) / 2));
+    let targetW = Math.max(1, Math.round((dist(tl,tr) + dist(bl,br)) / 2));
     let targetH = Math.max(1, Math.round((dist(tl,bl) + dist(tr,br)) / 2));
-    const minH = Math.round(targetW * 1.33);
-    if(targetH < minH) targetH = minH;
+    // 비율 고정: 가로형은 가로:세로 = 4:3, 세로형은 3:4
+    if(targetW >= targetH) targetW = Math.round(targetH * 4 / 3);
+    else targetH = Math.round(targetW * 4 / 3);
 
     const srcTri = track(cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x,tl.y, tr.x,tr.y, br.x,br.y, bl.x,bl.y]));
     const dstTri = track(cv.matFromArray(4, 1, cv.CV_32FC2, [0,0, targetW,0, targetW,targetH, 0,targetH]));
