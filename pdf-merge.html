@@ -180,6 +180,45 @@
   .pad-title{font-weight:700; margin-bottom:10px;}
   .pad-wrap{background:#fff; border:1px solid var(--border); border-radius:10px; line-height:0; touch-action:none; margin:0 auto;}
   .pad-wrap canvas{display:block; width:100%; height:100%; touch-action:none; cursor:crosshair;}
+  /* 스캔 (문서 스캐너) */
+  .scan-doc{border:1px solid var(--border); border-radius:12px; padding:12px; margin-top:14px; background:var(--card);}
+  .scan-doc.done{border-color:var(--ok);}
+  .scan-doc-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+  .scan-doc-actions{display:flex; gap:6px;}
+  .scan-doc-actions button{
+    min-width:40px; padding:6px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-size:.85rem; cursor:pointer;
+  }
+  .scan-doc-actions button[data-act="del"]{color:var(--danger);}
+  .scan-editor{position:relative; width:100%; max-width:420px; margin:10px auto; background:#e5e7eb; line-height:0; touch-action:none;}
+  .scan-editor img{width:100%; height:100%; object-fit:fill; display:block; pointer-events:none; user-select:none; -webkit-user-drag:none;}
+  .scan-svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible;}
+  .scan-poly{fill:rgba(37,99,235,.2); stroke:#2563eb; stroke-width:2; pointer-events:none;}
+  .scan-corner{fill:#2563eb; stroke:#fff; stroke-width:3; cursor:grab;}
+  .scan-preview{display:block; width:100%; max-width:420px; margin:10px auto; border:1px solid var(--border);}
+  .scan-ocr-result{width:100%; height:110px; margin-top:8px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; resize:vertical;}
+  .scan-radio{display:flex; flex-wrap:wrap; gap:6px 16px; margin:6px 0 12px; font-size:.9rem;}
+  .scan-radio label{display:flex; align-items:center; gap:6px; cursor:pointer;}
+  #scan-magnifier{position:fixed; width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; background:#fff no-repeat; display:none; pointer-events:none; z-index:4000; box-shadow:0 4px 10px rgba(0,0,0,.3);}
+  #scan-camera{display:none; flex-direction:column; align-items:center; justify-content:center; position:fixed; inset:0; background:#000; z-index:2000;}
+  #scan-video-box{position:relative; width:100%; max-height:75vh; aspect-ratio:3/4; background:#111; overflow:hidden; display:flex; justify-content:center;}
+  #scan-video{width:100%; height:100%; object-fit:cover; cursor:crosshair;}
+  #scan-cam-status{position:absolute; top:10px; right:10px; color:#fff; font-weight:700; background:rgba(0,0,0,.5); padding:5px 10px; border-radius:6px; z-index:2002;}
+  #scan-focus-hint{position:absolute; top:14px; left:0; right:0; text-align:center; color:rgba(255,255,255,.75); font-size:.85rem; pointer-events:none; z-index:2002;}
+  #scan-focus-ring{position:absolute; width:60px; height:60px; border:2px solid #22c55e; border-radius:50%; display:none; transform:translate(-50%,-50%); pointer-events:none; z-index:2002;}
+  #scan-thumbs{position:absolute; bottom:12px; left:12px; right:12px; display:none; gap:8px; overflow-x:auto; padding:5px; background:rgba(0,0,0,.4); border-radius:8px; z-index:2010;}
+  .scan-thumb{position:relative; width:50px; height:66px; flex-shrink:0; border:2px solid #fff; border-radius:4px; overflow:hidden; background:#000;}
+  .scan-thumb img{width:100%; height:100%; object-fit:cover;}
+  .scan-thumb span{position:absolute; top:2px; right:2px; background:rgba(220,38,38,.9); color:#fff; font-size:.7rem; font-weight:700; padding:2px 5px; border-radius:4px; line-height:1;}
+  .scan-cam-controls{display:flex; gap:16px; padding:18px; width:100%; justify-content:center; background:#000; z-index:2015;}
+  .scan-cam-controls button{padding:14px 24px; border-radius:30px; font-weight:700; font-size:1.05rem; border:none; cursor:pointer; flex:1; max-width:200px;}
+  #scan-snap{background:#fff; color:#000;}
+  #scan-done{background:#16a34a; color:#fff;}
+  #scan-loading{display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); color:#fff; justify-content:center; align-items:center; z-index:5000; font-size:1.1rem;}
+  #inapp-guard{position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.92); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; text-align:center; line-height:1.6;}
+  #inapp-guard h2{color:#fbbf24; margin:0 0 14px;}
+  #inapp-guard .box{background:#222; border-radius:10px; padding:14px 16px; margin:18px 0; font-size:.95rem; color:#ddd; word-break:keep-all;}
+  #inapp-guard button{padding:13px 24px; font-size:1rem; font-weight:700; border:none; border-radius:10px; cursor:pointer; margin:4px;}
   .check-row{display:flex; align-items:center; gap:8px; margin-top:12px; font-size:.9rem; cursor:pointer;}
   .check-row input{width:18px; height:18px;}
   .footer{
@@ -210,6 +249,7 @@
     <div class="tab" data-tab="insert">페이지 추가</div>
     <div class="tab" data-tab="rotate">페이지 회전</div>
     <div class="tab" data-tab="edit">편집</div>
+    <div class="tab" data-tab="scan">스캔</div>
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
     <div class="tab" data-tab="password">암호넣기</div>
   </div>
@@ -437,6 +477,62 @@
     </div>
   </div>
 
+  <!-- 스캔 (문서 스캐너) -->
+  <div class="panel" id="panel-scan">
+    <div class="card">
+      <div class="privacy-note">🔒 <b>안심하고 쓰세요.</b> 촬영한 사진과 스캔 결과는 이 기기의 브라우저 안에서만 처리되며, 웹(서버)으로 전송되거나 저장되지 않아요. 화면을 닫으면 작업 내용은 사라져요.</div>
+      <p class="hint" id="scan-cv-status">스캔 엔진은 이 탭을 처음 열 때 불러와요.</p>
+      <div class="btn-row">
+        <label class="btn secondary" for="scan-file-input" style="display:block; text-align:center; cursor:pointer;">🖼️ 사진 불러오기</label>
+        <input type="file" id="scan-file-input" accept="image/*" multiple>
+        <button class="btn" id="scan-camera-btn" type="button">📷 카메라 연속 촬영</button>
+      </div>
+      <div id="scan-settings" style="display:none; margin-top:12px;">
+        <div><b>스캔 필터</b> <span class="hint">(평탄화를 적용할 때 쓰여요)</span></div>
+        <div class="scan-radio">
+          <label><input type="radio" name="scan_filter" value="bw" checked> 📝 고대비 흑백</label>
+          <label><input type="radio" name="scan_filter" value="color"> 🎨 선명한 컬러</label>
+        </div>
+        <div><b>PDF 용량</b></div>
+        <div class="scan-radio">
+          <label><input type="radio" name="scan_quality" value="1.0"> 원본 고화질</label>
+          <label><input type="radio" name="scan_quality" value="0.8" checked> 균형 (추천)</label>
+          <label><input type="radio" name="scan_quality" value="0.5"> 저용량</label>
+        </div>
+        <p class="hint">사진마다 모서리 4개의 파란 점을 문서 끝에 맞추고 "평탄화 적용"을 누르세요. 안 누른 쪽은 저장할 때 자동으로 적용돼요. ▲▼로 순서를 바꿀 수 있어요.</p>
+      </div>
+      <div id="scan-workspace"></div>
+      <div id="scan-save-area" style="display:none;">
+        <div class="range-row" style="margin-top:14px;">
+          <input type="text" id="scan-filename" placeholder="저장할 파일 이름">
+        </div>
+        <button class="btn" id="scan-save-btn" type="button">순서대로 PDF 저장</button>
+        <div class="btn-row">
+          <button class="btn secondary" id="scan-to-merge" type="button">합치기 탭으로 보내기</button>
+          <button class="btn secondary" id="scan-to-edit" type="button">편집(서명) 탭으로 보내기</button>
+        </div>
+      </div>
+      <div class="status" id="scan-status"></div>
+    </div>
+
+    <div id="scan-magnifier"></div>
+    <div id="scan-camera">
+      <div id="scan-video-box">
+        <video id="scan-video" autoplay playsinline muted></video>
+        <div id="scan-cam-status">촬영: 0장</div>
+        <div id="scan-focus-ring"></div>
+        <div id="scan-focus-hint">화면을 터치하면 해당 영역에 초점을 맞춥니다</div>
+        <div id="scan-thumbs"></div>
+      </div>
+      <div class="scan-cam-controls">
+        <button id="scan-snap" type="button">📸 사진 찍기</button>
+        <button id="scan-done" type="button">✔️ 촬영 완료</button>
+      </div>
+    </div>
+    <div id="scan-loading"><div id="scan-loading-msg">처리하는 중…</div></div>
+    <canvas id="scan-hidden-canvas" style="display:none;"></canvas>
+  </div>
+
   <!-- 이미지 -> PDF -->
   <div class="panel" id="panel-img2pdf">
     <div class="card">
@@ -517,6 +613,39 @@
 </div>
 
 <script>
+// ---------- 앱 안 브라우저(카카오톡·네이버 등) 안내 ----------
+// 이런 앱 안에서는 카메라와 파일 저장이 막히는 경우가 있어서, 크롬/사파리로 열도록 안내한다.
+(function(){
+  const ua = navigator.userAgent || '';
+  const isKakao = /kakaotalk/i.test(ua);
+  if(!/(kakaotalk|naver\(|naverapp|instagram|fban|fbav|fb_iab|everytimeapp|daumapps|line\/)/i.test(ua)) return;
+  const isAndroid = /android/i.test(ua);
+  let tried = false;
+  try{ tried = sessionStorage.getItem('inappRedirectTried') === '1'; sessionStorage.setItem('inappRedirectTried','1'); }catch(e){}
+  if(!tried){   // 무한 반복을 막기 위해 한 번만 자동 이동을 시도
+    const target = isAndroid ? 'intent://' + location.href.replace(/^https?:\/\//i, '') + '#Intent;scheme=https;package=com.android.chrome;end'
+                 : (isKakao ? 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href) : '');
+    if(target) setTimeout(()=>{ location.href = target; }, 400);   // 안내 화면이 먼저 그려지도록 잠시 뒤 이동
+  }
+  const ov = document.createElement('div');
+  ov.id = 'inapp-guard';
+  ov.innerHTML = `
+    <h2>⚠️ 앱 안 브라우저예요</h2>
+    <p style="margin:0; word-break:keep-all;">카카오톡·네이버 같은 앱 안에서는<br><b>카메라와 파일 저장이 막힐 수 있어요.</b></p>
+    <div class="box">오른쪽 위(또는 아래)의 <b>[⋮] 또는 [≡] 메뉴</b>를 눌러<br><b style="color:#4ade80;">'다른 브라우저로 열기'</b>(안드로이드는 크롬, 아이폰은 사파리)를 선택해 주세요.</div>
+    <div>
+      <button type="button" id="inapp-copy" style="background:#2563eb;color:#fff;">🔗 주소 복사하기</button>
+      <button type="button" id="inapp-skip" style="background:#374151;color:#e5e7eb;">그냥 계속 사용</button>
+    </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('inapp-skip').addEventListener('click', ()=>ov.remove());
+  document.getElementById('inapp-copy').addEventListener('click', async ()=>{
+    try{ await navigator.clipboard.writeText(location.href); }
+    catch(e){ const t = document.createElement('input'); t.value = location.href; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+    alert('주소를 복사했어요. 크롬(또는 사파리)을 열고 주소창에 붙여넣어 주세요.');
+  });
+})();
+
 // 처리 엔진(PDFLib)이 안 불러와졌어도 탭 전환·파일 선택 UI는 항상 동작하도록 분리
 function getPDFDocument(){
   if (typeof PDFLib === 'undefined' || window.__pdfLibFailed) {
@@ -533,6 +662,7 @@ document.querySelectorAll('.tab').forEach(t=>{
     document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab === 'scan') scanOnOpen();   // 스캔 엔진은 이 탭을 처음 열 때만 불러옴
   });
 });
 
@@ -2082,6 +2212,433 @@ editSaveBtn.addEventListener('click', async ()=>{
   }
   editSaveBtn.disabled = false;
 });
+
+// ---------- 스캔 (문서 스캐너) ----------
+// OpenCV(약 8MB)·Tesseract(OCR)는 필요할 때만 불러온다. 사진·결과는 모두 이 기기 안에서만 처리한다.
+const scanWorkspace = document.getElementById('scan-workspace');
+const scanStatus = document.getElementById('scan-status');
+const scanCvStatus = document.getElementById('scan-cv-status');
+const scanSettings = document.getElementById('scan-settings');
+const scanSaveArea = document.getElementById('scan-save-area');
+const scanMag = document.getElementById('scan-magnifier');
+const scanLoading = document.getElementById('scan-loading');
+const scanNameInput = document.getElementById('scan-filename');
+let scanDocs = {}, scanSeq = 0, scanStream = null, scanTrack = null, scanShots = [];
+let scanCvPromise = null, scanOpened = false, scanTessPromise = null;
+
+function scanLoadCV(){
+  if(scanCvPromise) return scanCvPromise;
+  scanCvStatus.textContent = '스캔 엔진을 불러오는 중… (처음 한 번, 약 8MB)';
+  scanCvStatus.style.color = '';
+  const p = new Promise((resolve, reject)=>{
+    const ready = ()=> window.cv && window.cv.Mat;
+    if(ready()) return resolve();
+    const s = document.createElement('script');
+    s.async = true; s.src = 'https://docs.opencv.org/4.8.0/opencv.js';
+    s.onerror = ()=>reject(new Error('엔진을 불러오지 못했어요'));
+    s.onload = ()=>{
+      const t0 = Date.now(); let hooked = false;
+      const poll = ()=>{
+        if(ready()) return resolve();
+        if(!hooked && window.cv && typeof window.cv.then === 'function'){
+          hooked = true;
+          window.cv.then(m=>{ try{ delete m.then; }catch(e){} window.cv = m; });
+        }
+        if(Date.now() - t0 > 90000) return reject(new Error('엔진 준비 시간 초과'));
+        setTimeout(poll, 100);
+      };
+      poll();
+    };
+    document.head.appendChild(s);
+  });
+  scanCvPromise = p;
+  p.then(()=>{ scanCvStatus.textContent = '✓ 스캔 엔진 준비 완료'; scanCvStatus.style.color = 'var(--ok)'; })
+   .catch(()=>{
+     if(scanCvPromise === p) scanCvPromise = null;
+     scanCvStatus.textContent = '스캔 엔진을 불러오지 못했어요. 네트워크를 확인한 뒤 "평탄화 적용"을 누르거나 이 탭을 다시 열어 주세요.';
+     scanCvStatus.style.color = 'var(--danger)';
+   });
+  return p;
+}
+function scanOnOpen(){
+  if(scanOpened) return;
+  scanOpened = true;
+  scanLoadCV().catch(()=>{ scanOpened = false; });
+}
+
+function scanLoadTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  if(scanTessPromise) return scanTessPromise;
+  scanTessPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+    s.onload = resolve;
+    s.onerror = ()=>{ scanTessPromise = null; reject(new Error('OCR 엔진을 불러오지 못했어요')); };
+    document.head.appendChild(s);
+  });
+  return scanTessPromise;
+}
+
+// ----- 카메라 연속 촬영 -----
+const scanCameraEl = document.getElementById('scan-camera');
+const scanVideo = document.getElementById('scan-video');
+const scanThumbs = document.getElementById('scan-thumbs');
+const scanCamStatus = document.getElementById('scan-cam-status');
+
+document.getElementById('scan-camera-btn').addEventListener('click', async ()=>{
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    setStatus(scanStatus, '이 브라우저에서는 카메라를 쓸 수 없어요. 크롬(또는 사파리)으로 열어 주세요.', 'err'); return;
+  }
+  try{
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode:'environment', width:{ideal:3000}, height:{ideal:4000}, aspectRatio:{ideal:0.75}, advanced:[{focusMode:'continuous'}]}
+    });
+    scanVideo.srcObject = scanStream;
+    scanTrack = scanStream.getVideoTracks()[0];
+    scanShots = [];
+    scanThumbs.innerHTML = ''; scanThumbs.style.display = 'none';
+    scanCamStatus.textContent = '촬영: 0장';
+    scanCameraEl.style.display = 'flex';
+    setStatus(scanStatus, '');
+  }catch(err){
+    scanCameraEl.style.display = 'none';
+    setStatus(scanStatus, '카메라를 열지 못했어요. 카메라 권한을 허용했는지, 크롬이나 사파리로 열었는지 확인해 주세요.', 'err');
+  }
+});
+document.getElementById('scan-video-box').addEventListener('pointerdown', async e=>{
+  if(!scanTrack) return;
+  const rect = scanVideo.getBoundingClientRect();
+  const ring = document.getElementById('scan-focus-ring');
+  ring.style.left = (e.clientX - rect.left) + 'px'; ring.style.top = (e.clientY - rect.top) + 'px';
+  ring.style.display = 'block'; setTimeout(()=>{ ring.style.display = 'none'; }, 1000);
+  try{
+    const cap = scanTrack.getCapabilities();
+    if(cap.focusMode) await scanTrack.applyConstraints({advanced:[{focusMode:'single-shot', pointsOfInterest:[{x:(e.clientX-rect.left)/rect.width, y:(e.clientY-rect.top)/rect.height}]}]});
+  }catch(err){}
+});
+document.getElementById('scan-snap').addEventListener('click', ()=>{
+  if(!scanStream || !scanVideo.videoWidth) return;
+  const box = document.getElementById('scan-video-box');
+  const flash = document.createElement('div');
+  flash.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.8;z-index:2005;transition:opacity .2s;';
+  box.appendChild(flash);
+  setTimeout(()=>{ flash.style.opacity = '0'; }, 50); setTimeout(()=>flash.remove(), 250);
+  const c = document.createElement('canvas');
+  c.width = scanVideo.videoWidth; c.height = scanVideo.videoHeight;
+  c.getContext('2d').drawImage(scanVideo, 0, 0);
+  const dataUrl = c.toDataURL('image/jpeg', 0.92);
+  scanShots.push(dataUrl);
+  scanCamStatus.textContent = `촬영: ${scanShots.length}장`;
+  scanThumbs.style.display = 'flex';
+  const t = document.createElement('div'); t.className = 'scan-thumb';
+  t.innerHTML = `<img alt=""><span>${scanShots.length}</span>`;
+  t.querySelector('img').src = dataUrl;
+  scanThumbs.appendChild(t); scanThumbs.scrollLeft = scanThumbs.scrollWidth;
+});
+document.getElementById('scan-done').addEventListener('click', ()=>{
+  if(scanStream) scanStream.getTracks().forEach(t=>t.stop());
+  scanStream = null; scanTrack = null;
+  scanCameraEl.style.display = 'none';
+  scanShots.forEach(scanCreateDoc);
+  scanShots = [];
+});
+document.getElementById('scan-file-input').addEventListener('change', e=>{
+  Array.from(e.target.files).forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = ev=>scanCreateDoc(ev.target.result);
+    reader.readAsDataURL(file);
+  });
+  e.target.value = '';
+});
+
+// ----- 한 장(페이지) 편집기: 모서리 4점 -----
+function scanUpdateControls(){
+  const docs = scanWorkspace.querySelectorAll('.scan-doc');
+  const has = docs.length > 0;
+  scanSettings.style.display = has ? 'block' : 'none';
+  scanSaveArea.style.display = has ? 'block' : 'none';
+  if(has && !scanNameInput.dataset.touched && !scanNameInput.value){
+    scanNameInput.value = '스캔문서_' + new Date().toISOString().slice(0,10);
+  }
+  docs.forEach((w, i)=>{
+    w.querySelector('.scan-title').textContent = `${i+1}쪽`;
+    w.querySelector('[data-act="up"]').disabled = (i === 0);
+    w.querySelector('[data-act="down"]').disabled = (i === docs.length - 1);
+  });
+}
+scanNameInput.addEventListener('input', ()=>{ scanNameInput.dataset.touched = '1'; });
+
+function scanCreateDoc(dataUrl){
+  const id = 'scan-doc-' + (++scanSeq);
+  const wrap = document.createElement('div');
+  wrap.className = 'scan-doc'; wrap.id = id;
+  wrap.innerHTML = `
+    <div class="scan-doc-head">
+      <b class="scan-title"></b>
+      <span class="scan-doc-actions">
+        <button type="button" data-act="up">▲</button>
+        <button type="button" data-act="down">▼</button>
+        <button type="button" data-act="del">삭제</button>
+      </span>
+    </div>
+    <div class="scan-editor"><img alt=""><svg class="scan-svg"><polygon class="scan-poly"></polygon></svg></div>
+    <img class="scan-preview" alt="" style="display:none;">
+    <div class="btn-row">
+      <button type="button" class="btn secondary scan-flatten">✔️ 평탄화 적용 (미리보기)</button>
+      <button type="button" class="btn secondary scan-revert" style="display:none;">✂️ 테두리 다시 자르기</button>
+    </div>
+    <button type="button" class="btn secondary scan-ocr" style="display:none;">🔍 글자 추출 (OCR)</button>
+    <div class="scan-ocr-box" style="display:none;">
+      <textarea class="scan-ocr-result" placeholder="추출된 글자가 여기에 표시돼요. 복사해서 쓰세요."></textarea>
+      <button type="button" class="btn secondary scan-ocr-copy">📋 글자 복사</button>
+    </div>`;
+  scanWorkspace.appendChild(wrap);
+
+  const editor = wrap.querySelector('.scan-editor');
+  const img = editor.querySelector('img');
+  const svg = editor.querySelector('svg');
+  const polygon = svg.querySelector('polygon');
+  const preview = wrap.querySelector('.scan-preview');
+  const flattenBtn = wrap.querySelector('.scan-flatten');
+  const revertBtn = wrap.querySelector('.scan-revert');
+  const ocrBtn = wrap.querySelector('.scan-ocr');
+  const ocrBox = wrap.querySelector('.scan-ocr-box');
+  const ocrText = wrap.querySelector('.scan-ocr-result');
+  const circles = [];
+  for(let i=0;i<4;i++){
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('r', '20'); c.setAttribute('class', 'scan-corner');
+    svg.appendChild(c); circles.push(c);
+  }
+  const inst = {
+    img, pts: [{x:.02,y:.02},{x:.98,y:.02},{x:.98,y:.98},{x:.02,y:.98}], processed: null,
+    showEditor(){ editor.style.display = ''; preview.style.display = 'none'; flattenBtn.style.display = ''; revertBtn.style.display = 'none'; ocrBtn.style.display = 'none'; ocrBox.style.display = 'none'; wrap.classList.remove('done'); },
+    showPreview(res){ preview.src = res.data; editor.style.display = 'none'; preview.style.display = 'block'; flattenBtn.style.display = 'none'; revertBtn.style.display = ''; ocrBtn.style.display = ''; wrap.classList.add('done'); }
+  };
+  scanDocs[id] = inst;
+
+  const draw = ()=>{
+    const cw = img.clientWidth, ch = img.clientHeight;
+    if(!cw || !ch) return;
+    svg.setAttribute('viewBox', `0 0 ${cw} ${ch}`);
+    polygon.setAttribute('points', inst.pts.map(p=>`${p.x*cw},${p.y*ch}`).join(' '));
+    inst.pts.forEach((p, i)=>{ circles[i].setAttribute('cx', p.x*cw); circles[i].setAttribute('cy', p.y*ch); });
+  };
+  img.onload = ()=>{
+    editor.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;   // 사진 비율대로 보여줌
+    draw();
+  };
+  img.src = dataUrl;
+  window.addEventListener('resize', draw);
+
+  let drag = -1;
+  svg.addEventListener('pointerdown', e=>{
+    if(e.target.tagName !== 'circle') return;
+    e.preventDefault();
+    drag = circles.indexOf(e.target);
+    try{ svg.setPointerCapture(e.pointerId); }catch(err){}
+    scanMag.style.backgroundImage = `url(${img.src})`;
+    scanMag.style.display = 'block';
+  });
+  svg.addEventListener('pointermove', e=>{
+    if(drag === -1) return;
+    e.preventDefault();
+    const r = img.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - r.left, r.width));
+    const y = Math.max(0, Math.min(e.clientY - r.top, r.height));
+    inst.pts[drag] = {x: x / r.width, y: y / r.height};
+    draw();
+    scanMag.style.left = (e.clientX - 50) + 'px'; scanMag.style.top = (e.clientY - 120) + 'px';
+    scanMag.style.backgroundSize = `${img.naturalWidth}px ${img.naturalHeight}px`;
+    scanMag.style.backgroundPosition = `-${inst.pts[drag].x*img.naturalWidth - 50}px -${inst.pts[drag].y*img.naturalHeight - 50}px`;
+  });
+  const end = ()=>{ drag = -1; scanMag.style.display = 'none'; };
+  ['pointerup','pointercancel'].forEach(ev=>svg.addEventListener(ev, end));
+
+  flattenBtn.addEventListener('click', async ()=>{
+    flattenBtn.disabled = true;
+    await scanFlatten(id);
+    flattenBtn.disabled = false;
+  });
+  revertBtn.addEventListener('click', ()=>{ inst.processed = null; inst.showEditor(); draw(); });
+
+  wrap.querySelector('.scan-doc-actions').addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    if(b.dataset.act === 'del'){ wrap.remove(); delete scanDocs[id]; window.removeEventListener('resize', draw); }
+    if(b.dataset.act === 'up' && wrap.previousElementSibling) scanWorkspace.insertBefore(wrap, wrap.previousElementSibling);
+    if(b.dataset.act === 'down' && wrap.nextElementSibling) scanWorkspace.insertBefore(wrap.nextElementSibling, wrap);
+    scanUpdateControls();
+  });
+
+  ocrBtn.addEventListener('click', async ()=>{
+    if(!inst.processed) return;
+    ocrBtn.disabled = true;
+    ocrBtn.textContent = '⏳ OCR 엔진을 불러오는 중…';
+    try{
+      await scanLoadTesseract();
+      const res = await Tesseract.recognize(inst.processed.data, 'kor+eng', {
+        logger: m=>{ if(m && m.status === 'recognizing text') ocrBtn.textContent = `⏳ 글자 추출 중… ${Math.round((m.progress||0)*100)}%`; }
+      });
+      ocrBox.style.display = 'block';
+      ocrText.value = (res.data.text || '').trim() || '인식된 글자가 없어요.';
+    }catch(err){
+      console.error(err);
+      setStatus(scanStatus, '글자 추출에 실패했어요. 네트워크를 확인하고 다시 시도해 주세요.', 'err');
+    }
+    ocrBtn.textContent = '🔍 글자 추출 (OCR)';
+    ocrBtn.disabled = false;
+  });
+  wrap.querySelector('.scan-ocr-copy').addEventListener('click', async ()=>{
+    try{ await navigator.clipboard.writeText(ocrText.value); setStatus(scanStatus, '글자를 복사했어요.', 'ok'); }
+    catch(err){ ocrText.select(); document.execCommand('copy'); setStatus(scanStatus, '글자를 복사했어요.', 'ok'); }
+  });
+
+  scanUpdateControls();
+}
+
+// 모서리 4점으로 원근 보정(평탄화) + 필터
+function scanProcess(inst, filterType, quality){
+  const hidden = document.getElementById('scan-hidden-canvas');
+  let natW = inst.img.naturalWidth, natH = inst.img.naturalHeight;
+  const MAX_SRC = 1800;
+  if(natW > MAX_SRC || natH > MAX_SRC){
+    const s = MAX_SRC / Math.max(natW, natH);
+    natW = Math.round(natW * s); natH = Math.round(natH * s);
+  }
+  const tmp = document.createElement('canvas');
+  tmp.width = natW; tmp.height = natH;
+  tmp.getContext('2d').drawImage(inst.img, 0, 0, natW, natH);
+
+  const mats = [];
+  const track = m=>{ mats.push(m); return m; };
+  try{
+    const src = track(cv.imread(tmp));
+    const pts = inst.pts.map(p=>({x: p.x*natW, y: p.y*natH}));
+    const [tl, tr, br, bl] = pts;
+    const dist = (a, b)=>Math.hypot(a.x - b.x, a.y - b.y);
+    const targetW = Math.max(1, Math.round((dist(tl,tr) + dist(bl,br)) / 2));
+    let targetH = Math.max(1, Math.round((dist(tl,bl) + dist(tr,br)) / 2));
+    const minH = Math.round(targetW * 1.33);
+    if(targetH < minH) targetH = minH;
+
+    const srcTri = track(cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x,tl.y, tr.x,tr.y, br.x,br.y, bl.x,bl.y]));
+    const dstTri = track(cv.matFromArray(4, 1, cv.CV_32FC2, [0,0, targetW,0, targetW,targetH, 0,targetH]));
+    const dst = track(new cv.Mat());
+    const M = track(cv.getPerspectiveTransform(srcTri, dstTri));
+    cv.warpPerspective(src, dst, M, new cv.Size(targetW, targetH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255,255,255,255));
+
+    if(filterType === 'bw'){
+      cv.cvtColor(dst, dst, cv.COLOR_RGBA2GRAY, 0);
+      const bg = track(new cv.Mat());
+      cv.GaussianBlur(dst, bg, new cv.Size(71, 71), 0, 0, cv.BORDER_DEFAULT);
+      const norm = track(new cv.Mat());
+      cv.divide(dst, bg, norm, 255, cv.CV_8UC1);
+      const blur = track(new cv.Mat());
+      cv.GaussianBlur(norm, blur, new cv.Size(0, 0), 3);
+      cv.addWeighted(norm, 1.5, blur, -0.5, 0, norm);
+      cv.threshold(norm, dst, 195, 255, cv.THRESH_BINARY);
+    }else{
+      const blur = track(new cv.Mat());
+      cv.GaussianBlur(dst, blur, new cv.Size(0, 0), 3);
+      cv.addWeighted(dst, 1.3, blur, -0.3, 0, dst);
+    }
+    cv.imshow(hidden, dst);
+    return {data: hidden.toDataURL('image/jpeg', quality), width: targetW, height: targetH};
+  }finally{
+    mats.forEach(m=>{ try{ m.delete(); }catch(e){} });
+  }
+}
+
+async function scanFlatten(id){
+  const inst = scanDocs[id];
+  if(!inst) return false;
+  try{
+    await scanLoadCV();
+  }catch(err){
+    setStatus(scanStatus, '스캔 엔진을 불러오지 못해 평탄화할 수 없어요. 네트워크를 확인해 주세요.', 'err');
+    return false;
+  }
+  try{
+    const filter = document.querySelector('input[name="scan_filter"]:checked').value;
+    const quality = parseFloat(document.querySelector('input[name="scan_quality"]:checked').value);
+    const res = scanProcess(inst, filter, quality);
+    inst.processed = res;
+    inst.showPreview(res);
+    setStatus(scanStatus, '');
+    return true;
+  }catch(err){
+    console.error(err);
+    setStatus(scanStatus, '이 사진을 처리하지 못했어요. 모서리 위치를 다시 잡아 주세요.', 'err');
+    return false;
+  }
+}
+
+function scanDataUrlToBytes(u){
+  const b = atob(u.split(',')[1]);
+  const a = new Uint8Array(b.length);
+  for(let i=0;i<b.length;i++) a[i] = b.charCodeAt(i);
+  return a;
+}
+async function scanBuildPdf(){
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument) throw new Error('lib');
+  const wraps = Array.from(scanWorkspace.querySelectorAll('.scan-doc'));
+  // 평탄화를 안 누른 쪽은 지금 필터로 자동 적용
+  for(const w of wraps){
+    if(!scanDocs[w.id].processed){
+      document.getElementById('scan-loading-msg').textContent = '평탄화 적용 중…';
+      await new Promise(r=>setTimeout(r, 30));
+      const ok = await scanFlatten(w.id);
+      if(!ok) throw new Error('flatten');
+    }
+  }
+  document.getElementById('scan-loading-msg').textContent = 'PDF를 만드는 중…';
+  const doc = await PDFDocument.create();
+  const A4W = 595.28, A4H = 841.89, M = 28.35;
+  const maxW = A4W - 2*M, maxH = A4H - 2*M;
+  for(const w of wraps){
+    const r = scanDocs[w.id].processed;
+    const jpg = await doc.embedJpg(scanDataUrlToBytes(r.data));
+    const page = doc.addPage([A4W, A4H]);
+    const ratio = r.width / r.height;
+    let rw = maxW, rh = maxW / ratio;
+    if(rh > maxH){ rh = maxH; rw = maxH * ratio; }
+    page.drawImage(jpg, {x: M + (maxW - rw)/2, y: M + (maxH - rh)/2, width: rw, height: rh});
+  }
+  return await doc.save();
+}
+async function scanRun(action){
+  if(scanWorkspace.querySelectorAll('.scan-doc').length === 0){ setStatus(scanStatus, '먼저 사진을 불러오거나 촬영해 주세요.', 'err'); return; }
+  scanLoading.style.display = 'flex';
+  setStatus(scanStatus, '');
+  try{
+    const bytes = await scanBuildPdf();
+    const name = toPdfName(scanNameInput.value, '스캔문서');
+    if(action === 'save'){
+      await downloadBlob(bytes, name);
+      setStatus(scanStatus, '완료! 스캔한 PDF를 저장했어요.', 'ok');
+    }else{
+      const file = new File([bytes], name, {type: 'application/pdf'});
+      if(action === 'merge'){
+        mergeFiles.push(file); renderMergeList();
+        document.querySelector('.tab[data-tab="merge"]').click();
+        setStatus(mergeStatus, `"${name}"을 합치기 목록에 넣었어요.`, 'ok');
+      }else{
+        document.querySelector('.tab[data-tab="edit"]').click();
+        await loadEditFile(file);
+      }
+    }
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(scanStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else if(err && err.message === 'lib') setStatus(scanStatus, '처리 엔진을 불러오지 못해 PDF를 만들 수 없어요. 위 안내를 확인해 주세요.', 'err');
+    else if(!(err && err.message === 'flatten')) setStatus(scanStatus, 'PDF를 만드는 중 오류가 발생했어요.', 'err');
+  }
+  scanLoading.style.display = 'none';
+}
+document.getElementById('scan-save-btn').addEventListener('click', ()=>scanRun('save'));
+document.getElementById('scan-to-merge').addEventListener('click', ()=>scanRun('merge'));
+document.getElementById('scan-to-edit').addEventListener('click', ()=>scanRun('edit'));
 
 // ---------- 이미지 -> PDF ----------
 // imgPageItems의 각 항목은 PDF 한 페이지에 대응:
