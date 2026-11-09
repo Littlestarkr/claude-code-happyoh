@@ -1,0 +1,21 @@
+{
+  "name": "HappyOh PDF 도구",
+  "short_name": "PDF 도구",
+  "description": "폰에서 서류 스캔, 서명 넣기, PDF 합치기·분할을 한 번에. 파일은 서버로 올라가지 않아요.",
+  "id": "./pdf-merge.html",
+  "start_url": "./pdf-merge.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "ko",
+  "background_color": "#f5f6f8",
+  "theme_color": "#2563eb",
+  "icons": [
+    {"src": "pdf-tool-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "pdf-tool-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "pdf-tool-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "문서 스캔", "short_name": "스캔", "url": "./pdf-merge.html#scan", "icons": [{"src": "pdf-tool-icon-192.png", "sizes": "192x192"}]}
+  ]
+}

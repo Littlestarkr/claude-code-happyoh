@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>HappyOh PDF 도구</title>
+<link rel="manifest" href="pdf-tool.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<link rel="icon" type="image/png" sizes="192x192" href="pdf-tool-icon-192.png">
+<link rel="apple-touch-icon" href="pdf-tool-apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PDF 도구">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" onerror="window.__pdfLibFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onerror="window.__pdfjsFailed=true"></script>
 <style>
@@ -180,6 +188,11 @@
   .pad-title{font-weight:700; margin-bottom:10px;}
   .pad-wrap{background:#fff; border:1px solid var(--border); border-radius:10px; line-height:0; touch-action:none; margin:0 auto;}
   .pad-wrap canvas{display:block; width:100%; height:100%; touch-action:none; cursor:crosshair;}
+
+  /* 앱 설치 (페이지 맨 아래) */
+  #install-area{margin-top:28px; text-align:center;}
+  #install-go{width:100%; max-width:420px; border:1px solid var(--accent); background:var(--card); color:var(--accent); border-radius:12px; padding:13px 16px; font-size:1rem; font-weight:700; cursor:pointer;}
+  #install-help{display:none; margin:10px auto 0; max-width:420px; padding:10px 12px; background:var(--card); border:1px solid var(--border); border-radius:10px; color:var(--sub); font-size:.88rem; line-height:1.55; text-align:left;}
   /* 스캔 (문서 스캐너) */
   .scan-doc{border:1px solid var(--border); border-radius:12px; padding:12px; margin-top:14px; background:var(--card);}
   .scan-doc.done{border-color:var(--ok);}
@@ -636,6 +649,11 @@
     </div>
   </div>
 
+  <div id="install-area" style="display:none;">
+    <button type="button" id="install-go">📲 앱으로 설치하기</button>
+    <div id="install-help"></div>
+  </div>
+
   <div class="footer">
     <a href="mailto:happyojh@gmail.com">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -686,6 +704,39 @@
     alert('주소를 복사했어요. 크롬(또는 사파리)을 열고 주소창에 붙여넣어 주세요.');
   });
 })();
+
+// ---------- 앱으로 설치 (스토어 없이 홈 화면에 추가) ----------
+(function(){
+  const ua = navigator.userAgent || '';
+  if(/(kakaotalk|naver\(|naverapp|instagram|fban|fbav|fb_iab|everytimeapp|daumapps|line\/)/i.test(ua)) return;   // 앱 안 브라우저에서는 위 안내 화면이 먼저
+  const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('pdf-tool-sw.js').catch(()=>{});
+  }
+  if(standalone) return;          // 이미 앱으로 열었으면 버튼을 보이지 않음
+  const area = document.getElementById('install-area'), go = document.getElementById('install-go'), help = document.getElementById('install-help');
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  let promptEvt = null;
+  area.style.display = 'block';
+  window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); promptEvt = e; });
+  window.addEventListener('appinstalled', ()=>{ area.style.display = 'none'; });
+  go.addEventListener('click', async ()=>{
+    if(promptEvt){
+      promptEvt.prompt();
+      try{ const r = await promptEvt.userChoice; if(r && r.outcome === 'accepted') area.style.display = 'none'; }catch(e){}
+      promptEvt = null;
+      return;
+    }
+    help.innerHTML = isIOS
+      ? '사파리 아래쪽의 <b>공유 버튼(□↑)</b>을 누른 뒤 <b>"홈 화면에 추가"</b>를 누르세요.<br>※ 크롬이 아니라 <b>사파리</b>로 열어야 해요.'
+      : '크롬 오른쪽 위 <b>⋮ 메뉴</b>를 누른 뒤 <b>"앱 설치"</b> 또는 <b>"홈 화면에 추가"</b>를 누르세요.<br>※ 카카오톡 안이 아니라 <b>크롬</b>으로 열어야 해요.';
+    help.style.display = 'block';
+  });
+})();
+// 홈 화면 바로가기(#scan)로 열면 스캔 탭을 바로 보여준다
+window.addEventListener('load', ()=>{
+  if(location.hash === '#scan'){ const t = document.querySelector('.tab[data-tab="scan"]'); if(t) t.click(); }
+});
 
 // 처리 엔진(PDFLib)이 안 불러와졌어도 탭 전환·파일 선택 UI는 항상 동작하도록 분리
 function getPDFDocument(){
