@@ -2671,7 +2671,13 @@ function scanDetectCorners(img){
       [mask, poly, mean, sd, grown, ring].forEach(m=>m.delete()); pv.delete();
     }
     if(!pts) return null;
-    return order(pts).map(p=>({x: Math.min(1, Math.max(0, p.x / w)), y: Math.min(1, Math.max(0, p.y / h))}));
+    const o = order(pts);
+    const cx = o.reduce((a,q)=>a+q.x,0)/4, cy = o.reduce((a,q)=>a+q.y,0)/4;
+    const IN = 0.012;   // 모서리를 종이 안쪽으로 1.2%만 당겨서 바깥 테두리가 안 나오게 함
+    return o.map(q=>{
+      const x = q.x + (cx - q.x) * IN * 2, y = q.y + (cy - q.y) * IN * 2;
+      return {x: Math.min(1, Math.max(0, x / w)), y: Math.min(1, Math.max(0, y / h))};
+    });
   }catch(err){ return null; }
   finally{ mats.forEach(m=>{ try{ m.delete(); }catch(e){} }); }
 }
@@ -2710,8 +2716,13 @@ function scanProcess(inst, filterType, quality){
 
     if(filterType === 'bw'){
       cv.cvtColor(dst, dst, cv.COLOR_RGBA2GRAY, 0);
+      // 배경(종이 밝기·그림자)을 글자 없이 추정: 어두운 글자를 지우는 close 후 크게 흐림
       const bg = track(new cv.Mat());
-      cv.GaussianBlur(dst, bg, new cv.Size(71, 71), 0, 0, cv.BORDER_DEFAULT);
+      const kc = Math.max(15, Math.round(Math.min(targetW, targetH) / 60) | 1);
+      const kClose = track(cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kc, kc)));
+      cv.morphologyEx(dst, bg, cv.MORPH_CLOSE, kClose);
+      const kb = Math.max(51, (Math.round(Math.min(targetW, targetH) / 12) | 1));
+      cv.GaussianBlur(bg, bg, new cv.Size(kb, kb), 0, 0, cv.BORDER_REPLICATE);
       const norm = track(new cv.Mat());
       cv.divide(dst, bg, norm, 255, cv.CV_8UC1);
       const blur = track(new cv.Mat());
