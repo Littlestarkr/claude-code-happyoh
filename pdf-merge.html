@@ -151,7 +151,7 @@
   .group-row .group-del{border:none; background:none; color:var(--danger); font-size:1.1rem; cursor:pointer; padding:2px 4px;}
   .group-row .group-status{flex-basis:100%; order:4; font-size:.78rem; color:var(--sub); min-height:1em;}
   /* 편집(서명·이미지 넣기) */
-  .edit-stage{position:relative; margin:12px auto 0; border:1px solid var(--border); background:#fff; line-height:0; user-select:none; -webkit-user-select:none; overflow:hidden;}
+  .edit-stage{position:relative; margin:12px auto 0; box-shadow:0 0 0 1px var(--border); background:#fff; line-height:0; user-select:none; -webkit-user-select:none; overflow:hidden;}
   .edit-stage canvas{display:block;}
   .edit-item{position:absolute; border:1.5px dashed var(--accent); touch-action:none; cursor:move; line-height:0;}
   .edit-item img{width:100%; height:100%; display:block; pointer-events:none; -webkit-user-drag:none;}
@@ -164,6 +164,16 @@
     background:var(--danger); color:#fff; border:2px solid #fff; font-size:12px; line-height:20px;
     text-align:center; cursor:pointer; padding:0; touch-action:manipulation;
   }
+  .pen-overlay{position:absolute; inset:0; z-index:5; cursor:crosshair; touch-action:none; background:rgba(37,99,235,.05);}
+  .pen-rect{position:absolute; border:2px solid var(--accent); background:rgba(37,99,235,.15); pointer-events:none;}
+  .pad-modal{
+    position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.55);
+    display:flex; align-items:center; justify-content:center; padding:16px; overflow:auto;
+  }
+  .pad-card{background:var(--card); color:var(--text); border-radius:14px; padding:16px; width:100%; max-width:680px;}
+  .pad-title{font-weight:700; margin-bottom:10px;}
+  .pad-wrap{background:#fff; border:1px solid var(--border); border-radius:10px; line-height:0; touch-action:none; margin:0 auto;}
+  .pad-wrap canvas{display:block; width:100%; height:100%; touch-action:none; cursor:crosshair;}
   .check-row{display:flex; align-items:center; gap:8px; margin-top:12px; font-size:.9rem; cursor:pointer;}
   .check-row input{width:18px; height:18px;}
   .footer{
@@ -393,15 +403,29 @@
           <button class="btn secondary" id="edit-next" style="flex:0 0 72px;">▶</button>
         </div>
         <div class="edit-stage" id="edit-stage"></div>
-        <label class="btn secondary" for="edit-img-input" style="display:block; text-align:center; cursor:pointer;">✍️ 서명·이미지 넣기 (현재 쪽)</label>
-        <input type="file" id="edit-img-input" accept="image/jpeg,image/png">
+        <button class="btn secondary" id="edit-pen-btn" type="button">✏️ 영역 선택해서 직접 서명하기</button>
+        <label class="btn secondary" for="edit-img-input" style="display:block; text-align:center; cursor:pointer;">✍️ 서명 사진·이미지 넣기 (현재 쪽)</label>
+        <input type="file" id="edit-img-input" accept="image/*,.jpg,.jpeg,.jfif,.png,.webp">
         <label class="check-row"><input type="checkbox" id="edit-removebg" checked> 배경 지우기 (흰 종이에 쓴 서명 사진용)</label>
-        <p class="hint">서명을 종이에 써서 찍은 사진을 올리면 종이 배경이 지워지고 글씨만 남아요. 이미지를 끌어서 위치를 옮기고, 오른쪽 아래 파란 점으로 크기를 조절하세요. 빨간 ✕는 삭제예요. 쪽마다 따로 넣을 수 있어요.</p>
+        <p class="hint"><b>직접 서명</b>: 위 버튼을 누르고 서명할 자리를 사각형으로 끌어 선택하면 서명판이 열려요. 손가락·전자펜·마우스로 서명하고 "붙이기"를 누르세요.<br><b>서명 사진</b>: 종이에 써서 찍은 사진(JPG·PNG)을 올리면 종이 배경이 지워지고 글씨만 남아요.<br>붙인 서명은 끌어서 위치를 옮기고, 오른쪽 아래 파란 점으로 크기를 조절해요. 빨간 ✕는 삭제예요. 쪽마다 따로 넣을 수 있어요.</p>
         <div class="range-row" style="margin-top:12px;">
           <input type="text" id="edit-filename-input" placeholder="저장할 파일 이름">
         </div>
         <button class="btn" id="edit-save-btn">저장</button>
         <div class="status" id="edit-status"></div>
+      </div>
+      <!-- 직접 서명 패드 -->
+      <div class="pad-modal" id="pad-modal" style="display:none;">
+        <div class="pad-card">
+          <div class="pad-title">여기에 서명하세요</div>
+          <div class="pad-wrap" id="pad-wrap"><canvas id="pad-canvas"></canvas></div>
+          <div class="btn-row">
+            <button class="btn secondary" id="pad-clear" type="button">지우기</button>
+            <button class="btn secondary" id="pad-cancel" type="button">취소</button>
+            <button class="btn" id="pad-done" type="button">붙이기</button>
+          </div>
+          <p class="hint" id="pad-hint">서명이 선택한 사각형 안에 맞춰 붙어요. 붙인 뒤에도 크기·위치를 바꿀 수 있어요.</p>
+        </div>
       </div>
     </div>
   </div>
@@ -1589,6 +1613,7 @@ async function renderEditPage(){
   editStageW = avail; editStageH = Math.round(avail * vp1.height / vp1.width);
   editStage.style.width = editStageW + 'px';
   editStage.style.height = editStageH + 'px';
+  cancelPenMode();
   editStage.innerHTML = '';
   editStage.appendChild(canvas);
   editItems.filter(it=>it.page === editPage).forEach(addEditItemEl);
@@ -1770,6 +1795,61 @@ document.getElementById('edit-img-input').addEventListener('change', async e=>{
   if(f) await addEditImage(f);
 });
 
+// 사진을 읽어서(EXIF 방향 반영) 긴 변이 maxDim 이하인 캔버스로 만든다.
+// 폰으로 찍은 큰 사진(1200만 화소 이상)도 큰 캔버스를 만들지 않고 줄여서 읽는다.
+async function fileToScaledCanvas(file, maxDim){
+  let src = null, sw = 0, sh = 0, closer = null;
+  if(typeof createImageBitmap === 'function'){
+    try{
+      const bm = await createImageBitmap(file, {imageOrientation:'from-image'});
+      src = bm; sw = bm.width; sh = bm.height;
+      closer = ()=>{ if(bm.close) bm.close(); };
+    }catch(e){ console.warn('createImageBitmap 실패, <img> 방식으로 대체', e); }
+  }
+  if(!src){
+    const url = URL.createObjectURL(file);
+    try{
+      const img = await new Promise((resolve, reject)=>{
+        const im = new Image();
+        im.onload = ()=>resolve(im);
+        im.onerror = ()=>reject(new Error('이 이미지 형식을 읽을 수 없어요'));
+        im.src = url;
+      });
+      src = img; sw = img.naturalWidth; sh = img.naturalHeight;
+    }catch(e){ URL.revokeObjectURL(url); throw e; }
+    closer = ()=>URL.revokeObjectURL(url);
+  }
+  const s = Math.min(1, maxDim / Math.max(sw, sh));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(sw*s)); c.height = Math.max(1, Math.round(sh*s));
+  const ctx = c.getContext('2d');
+  if(!ctx){ if(closer) closer(); throw new Error('이미지가 너무 커서 처리할 수 없어요'); }
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  if(closer) closer();
+  return c;
+}
+
+// 만든 이미지를 현재 쪽에 올린다. place(비율 사각형)가 있으면 그 안에 맞춰 가운데에, 없으면 쪽 가운데에 둔다.
+function createEditItem(blob, kind, size, defaultW, place){
+  const ratio = size.h / size.w;
+  let w, u, v;
+  if(place){
+    w = Math.min(place.w, place.h * editStageH / (editStageW * ratio));
+    const hFrac = w * editStageW * ratio / editStageH;
+    u = place.u + (place.w - w) / 2;
+    v = place.v + (place.h - hFrac) / 2;
+  }else{
+    w = defaultW;
+    const hFrac = w * editStageW * ratio / editStageH;
+    u = (1 - w) / 2; v = Math.max(0, (1 - hFrac) / 2);
+  }
+  const it = {id: ++editSeq, page: editPage, kind, blob, url: URL.createObjectURL(blob), ratio, w, u, v, el: null};
+  editItems.push(it);
+  addEditItemEl(it);
+  return it;
+}
+
 async function addEditImage(file){
   if(!editPdfjsDoc){ setStatus(editStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
   setStatus(editStatus, '이미지를 처리하는 중…');
@@ -1777,7 +1857,7 @@ async function addEditImage(file){
     const removeBg = document.getElementById('edit-removebg').checked;
     let blob, kind, size;
     if(removeBg){
-      const src = await fileToOrientedCanvas(file);
+      const src = await fileToScaledCanvas(file, 2000);
       const ink = extractInkCanvas(src);
       if(!ink){ setStatus(editStatus, '이미지에서 글씨를 찾지 못했어요. 종이가 선명하게 나온 사진인지 확인하거나 "배경 지우기"를 끄고 다시 시도해 보세요.', 'err'); return; }
       // 너무 크면 줄여서 PDF 용량을 아낌
@@ -1788,27 +1868,170 @@ async function addEditImage(file){
         out.getContext('2d').drawImage(ink, 0, 0, out.width, out.height);
       }
       blob = await canvasToBlob(out, 'image/png'); kind = 'png'; size = {w: out.width, h: out.height};
-    }else if(file.type === 'image/png'){
-      blob = file; kind = 'png'; size = await blobImageSize(file);
+    }else if(file.type === 'image/png' || /\.png$/i.test(file.name)){
+      blob = file.type === 'image/png' ? file : new Blob([file], {type:'image/png'});
+      kind = 'png'; size = await blobImageSize(blob);
     }else{
-      const c = await fileToOrientedCanvas(file);   // EXIF 방향 반영
+      const c = await fileToScaledCanvas(file, 2400);   // EXIF 방향 반영 + 큰 사진 축소
       blob = await canvasToBlob(c, 'image/jpeg', 0.92); kind = 'jpg'; size = {w: c.width, h: c.height};
     }
-    const w = kind === 'png' && removeBg ? 0.28 : 0.3;
-    const ratio = size.h / size.w;
-    const hFrac = w * editStageW * ratio / editStageH;
-    const it = {
-      id: ++editSeq, page: editPage, kind, blob, url: URL.createObjectURL(blob),
-      ratio, w, u: (1 - w) / 2, v: Math.max(0, (1 - hFrac) / 2), el: null
-    };
-    editItems.push(it);
-    addEditItemEl(it);
+    createEditItem(blob, kind, size, removeBg ? 0.28 : 0.3, null);
     setStatus(editStatus, '넣었어요. 끌어서 위치를, 파란 점으로 크기를 맞춘 뒤 저장하세요.', 'ok');
   }catch(err){
     console.error(err);
-    setStatus(editStatus, '이미지를 처리하는 중 오류가 발생했어요.', 'err');
+    setStatus(editStatus, `이미지를 읽지 못했어요 (${(err && err.message) || '알 수 없는 오류'}). JPG·PNG 파일인지 확인해 주세요.`, 'err');
   }
 }
+
+// ----- 직접 서명: 사각형 영역 선택 → 서명판 → 붙이기 -----
+let penMode = false, penOverlay = null, penRectFrac = null;
+const penBtn = document.getElementById('edit-pen-btn');
+const PEN_BTN_TEXT = '✏️ 영역 선택해서 직접 서명하기';
+
+function cancelPenMode(){
+  penMode = false;
+  if(penOverlay){ penOverlay.remove(); penOverlay = null; }
+  penBtn.textContent = PEN_BTN_TEXT;
+}
+
+penBtn.addEventListener('click', ()=>{
+  if(!editPdfjsDoc){ setStatus(editStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  if(penMode){ cancelPenMode(); setStatus(editStatus, ''); return; }
+  penMode = true;
+  penBtn.textContent = '✕ 선택 취소';
+  setStatus(editStatus, '서명할 자리를 손가락이나 마우스로 끌어서 사각형으로 선택하세요.');
+  penOverlay = document.createElement('div');
+  penOverlay.className = 'pen-overlay';
+  editStage.appendChild(penOverlay);
+  let sx = 0, sy = 0, rectEl = null, dragging = false;
+  const local = e=>{
+    const r = editStage.getBoundingClientRect();
+    return {x: Math.min(Math.max(e.clientX - r.left, 0), r.width), y: Math.min(Math.max(e.clientY - r.top, 0), r.height)};
+  };
+  const box = p=>({x: Math.min(sx, p.x), y: Math.min(sy, p.y), w: Math.abs(p.x - sx), h: Math.abs(p.y - sy)});
+  const ov = penOverlay;
+  ov.addEventListener('pointerdown', e=>{
+    const p = local(e); sx = p.x; sy = p.y; dragging = true;
+    if(rectEl) rectEl.remove();
+    rectEl = document.createElement('div'); rectEl.className = 'pen-rect';
+    ov.appendChild(rectEl);
+    ov.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  ov.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const b = box(local(e));
+    rectEl.style.left = b.x + 'px'; rectEl.style.top = b.y + 'px';
+    rectEl.style.width = b.w + 'px'; rectEl.style.height = b.h + 'px';
+  });
+  ov.addEventListener('pointerup', e=>{
+    if(!dragging) return;
+    dragging = false;
+    const b = box(local(e));
+    if(b.w < 14 || b.h < 10){
+      if(rectEl){ rectEl.remove(); rectEl = null; }
+      setStatus(editStatus, '조금 더 크게 끌어서 선택해 주세요.', 'err');
+      return;
+    }
+    penRectFrac = {u: b.x / editStageW, v: b.y / editStageH, w: b.w / editStageW, h: b.h / editStageH};
+    setStatus(editStatus, '');
+    openPad(penRectFrac);
+  });
+  ov.addEventListener('pointercancel', ()=>{ dragging = false; });
+});
+
+const padModal = document.getElementById('pad-modal');
+const padWrap = document.getElementById('pad-wrap');
+const padCanvas = document.getElementById('pad-canvas');
+const padHint = document.getElementById('pad-hint');
+const PAD_HINT = padHint.textContent;
+let padCtx = null, padDrawing = false, padLast = null, padMid = null, padDpr = 1;
+
+function openPad(rectFrac){
+  const rw = rectFrac.w * editStageW, rh = rectFrac.h * editStageH;
+  const aspect = Math.min(Math.max(rh / rw, 0.2), 1);        // 서명판 높이/너비 (선택 영역 모양을 따르되 너무 납작하지 않게)
+  const cssW = Math.max(240, Math.min(window.innerWidth - 64, 640));
+  const cssH = Math.round(Math.max(120, Math.min(cssW * aspect, window.innerHeight * 0.45)));
+  padModal.style.display = 'flex';
+  padWrap.style.width = cssW + 'px';
+  padWrap.style.height = cssH + 'px';
+  padDpr = Math.min(window.devicePixelRatio || 1, 2);
+  padCanvas.width = Math.round(cssW * padDpr);
+  padCanvas.height = Math.round(cssH * padDpr);
+  padCtx = padCanvas.getContext('2d');
+  padCtx.lineCap = 'round'; padCtx.lineJoin = 'round';
+  padCtx.strokeStyle = 'rgb(20,20,40)'; padCtx.fillStyle = 'rgb(20,20,40)';
+  padHint.textContent = PAD_HINT; padHint.style.color = '';
+}
+function closePad(){ padModal.style.display = 'none'; padDrawing = false; }
+
+function padPoint(e){
+  const r = padCanvas.getBoundingClientRect();
+  const pressure = (e.pointerType === 'pen' && e.pressure > 0) ? e.pressure : 0.5;   // 전자펜은 필압 반영
+  return {x: (e.clientX - r.left) * padCanvas.width / r.width, y: (e.clientY - r.top) * padCanvas.height / r.height, p: pressure};
+}
+function padWidth(p){ return Math.max(1, 2.8 * padDpr * (0.55 + p * 0.9)); }
+
+padCanvas.addEventListener('pointerdown', e=>{
+  padDrawing = true;
+  padHint.textContent = PAD_HINT; padHint.style.color = '';
+  padCanvas.setPointerCapture(e.pointerId);
+  const pt = padPoint(e);
+  padLast = pt; padMid = pt;
+  padCtx.beginPath(); padCtx.arc(pt.x, pt.y, padWidth(pt.p)/2, 0, Math.PI*2); padCtx.fill();
+  e.preventDefault();
+});
+padCanvas.addEventListener('pointermove', e=>{
+  if(!padDrawing) return;
+  const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  for(const ev of evs){
+    const pt = padPoint(ev);
+    const mid = {x: (padLast.x + pt.x)/2, y: (padLast.y + pt.y)/2};
+    padCtx.lineWidth = padWidth((padLast.p + pt.p)/2);
+    padCtx.beginPath(); padCtx.moveTo(padMid.x, padMid.y);
+    padCtx.quadraticCurveTo(padLast.x, padLast.y, mid.x, mid.y);
+    padCtx.stroke();
+    padMid = mid; padLast = pt;
+  }
+  e.preventDefault();
+});
+['pointerup','pointercancel'].forEach(ev=>padCanvas.addEventListener(ev, ()=>{ padDrawing = false; }));
+
+document.getElementById('pad-clear').addEventListener('click', ()=>{
+  if(padCtx) padCtx.clearRect(0, 0, padCanvas.width, padCanvas.height);
+  padHint.textContent = PAD_HINT; padHint.style.color = '';
+});
+document.getElementById('pad-cancel').addEventListener('click', ()=>{ closePad(); cancelPenMode(); setStatus(editStatus, ''); });
+document.getElementById('pad-done').addEventListener('click', async ()=>{
+  try{
+    const w = padCanvas.width, h = padCanvas.height;
+    const data = padCtx.getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        if(data[(y*w+x)*4+3] > 20){
+          if(x<minX) minX=x; if(x>maxX) maxX=x; if(y<minY) minY=y; if(y>maxY) maxY=y;
+        }
+      }
+    }
+    if(maxX < 0){ padHint.textContent = '서명이 비어 있어요. 먼저 서명해 주세요.'; padHint.style.color = 'var(--danger)'; return; }
+    const pad = Math.round(4 * padDpr);
+    minX = Math.max(0, minX-pad); minY = Math.max(0, minY-pad);
+    maxX = Math.min(w-1, maxX+pad); maxY = Math.min(h-1, maxY+pad);
+    const cw = maxX-minX+1, ch = maxY-minY+1;
+    const sc = Math.min(1, 1000 / cw);
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(cw*sc)); out.height = Math.max(1, Math.round(ch*sc));
+    out.getContext('2d').drawImage(padCanvas, minX, minY, cw, ch, 0, 0, out.width, out.height);
+    const blob = await canvasToBlob(out, 'image/png');
+    createEditItem(blob, 'png', {w: out.width, h: out.height}, 0.28, penRectFrac);
+    closePad(); cancelPenMode();
+    setStatus(editStatus, '붙였어요. 끌어서 위치를, 파란 점으로 크기를 맞춘 뒤 저장하세요.', 'ok');
+  }catch(err){
+    console.error(err);
+    padHint.textContent = '서명을 만드는 중 오류가 발생했어요.'; padHint.style.color = 'var(--danger)';
+  }
+});
 
 editSaveBtn.addEventListener('click', async ()=>{
   if(!editBytes){ setStatus(editStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
