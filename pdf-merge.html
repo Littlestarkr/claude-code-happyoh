@@ -2286,6 +2286,7 @@ const scanThumbs = document.getElementById('scan-thumbs');
 const scanCamStatus = document.getElementById('scan-cam-status');
 
 document.getElementById('scan-camera-btn').addEventListener('click', async ()=>{
+  scanStartSensor();
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     setStatus(scanStatus, '이 브라우저에서는 카메라를 쓸 수 없어요. 크롬(또는 사파리)으로 열어 주세요.', 'err'); return;
   }
@@ -2308,6 +2309,35 @@ document.getElementById('scan-camera-btn').addEventListener('click', async ()=>{
   }
 });
 // 미리보기 상자를 실제 촬영 화면(가로/세로) 비율에 맞춰서, 보이는 그대로 촬영되게 한다
+// ----- 폰을 가로/세로 어떻게 들었는지 가속도 센서로 알아내서, 옆으로 누운 사진을 자동으로 세워 준다 -----
+let scanPhi = 0;           // 폰 윗부분이 세상 위쪽에서 시계 반대 방향으로 몇 도 돌아갔는지 (0/90/180/270)
+let scanSensorOn = false;
+function scanOnMotion(e){
+  const a = e.accelerationIncludingGravity; if(!a || a.x == null || a.y == null) return;
+  const sign = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? -1 : 1;   // iOS는 부호가 반대
+  const x = a.x * sign, y = a.y * sign;
+  if(Math.max(Math.abs(x), Math.abs(y)) < 3) return;   // 폰이 바닥과 거의 수평이면 판단하지 않고 직전 값 유지
+  if(Math.abs(y) >= Math.abs(x)) scanPhi = y > 0 ? 0 : 180;
+  else scanPhi = x > 0 ? 90 : 270;
+}
+async function scanStartSensor(){
+  try{
+    if(window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function'){
+      const r = await DeviceMotionEvent.requestPermission();   // iOS는 허용 팝업이 떠요
+      if(r !== 'granted') return;
+    }
+    scanPhi = 0;
+    if(!scanSensorOn){ window.addEventListener('devicemotion', scanOnMotion); scanSensorOn = true; }
+  }catch(err){}
+}
+function scanStopSensor(){
+  if(scanSensorOn){ window.removeEventListener('devicemotion', scanOnMotion); scanSensorOn = false; }
+}
+// 촬영된 사진을 시계 반대 방향으로 몇 번(90도) 돌려야 바로 서는지
+function scanQuarterTurns(){
+  const alpha = (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0);
+  return ((Math.round((scanPhi - alpha) / 90) % 4) + 4) % 4;
+}
 function scanIsLandscape(){ return window.innerWidth > window.innerHeight; }
 // 촬영 비율은 항상 가로 4:3 / 세로 3:4. 카메라가 다른 비율을 주면 가운데를 잘라서 '보이는 그대로' 찍는다.
 function scanTargetRatio(){ return scanIsLandscape() ? 4/3 : 3/4; }
@@ -2348,7 +2378,14 @@ document.getElementById('scan-snap').addEventListener('click', async ()=>{
     if(vw / vh > tr) sw = Math.round(vh * tr); else sh = Math.round(vw / tr);
     const c = document.createElement('canvas'); c.width = sw; c.height = sh;
     c.getContext('2d').drawImage(src, Math.round((vw - sw)/2), Math.round((vh - sh)/2), sw, sh, 0, 0, sw, sh);
-    return c.toDataURL('image/jpeg', 0.95);
+    const n = scanSensorOn ? scanQuarterTurns() : 0;
+    if(n === 0) return c.toDataURL('image/jpeg', 0.95);
+    const r = document.createElement('canvas');
+    r.width = (n % 2) ? sh : sw; r.height = (n % 2) ? sw : sh;
+    const x = r.getContext('2d');
+    x.translate(r.width/2, r.height/2); x.rotate(-n * Math.PI/2);   // 시계 반대 방향
+    x.drawImage(c, -sw/2, -sh/2);
+    return r.toDataURL('image/jpeg', 0.95);
   };
   let dataUrl = null;
   // 가능한 기기에서는 카메라의 '사진' 모드(최대 해상도)로 촬영한다. 미리보기 영상보다 훨씬 선명하다.
@@ -2372,7 +2409,7 @@ document.getElementById('scan-snap').addEventListener('click', async ()=>{
 });
 document.getElementById('scan-done').addEventListener('click', ()=>{
   if(scanStream) scanStream.getTracks().forEach(t=>t.stop());
-  scanStream = null; scanTrack = null;
+  scanStream = null; scanTrack = null; scanStopSensor();
   scanCameraEl.style.display = 'none';
   scanShots.forEach(scanCreateDoc);
   scanShots = [];
