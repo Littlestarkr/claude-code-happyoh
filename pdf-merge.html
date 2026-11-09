@@ -496,7 +496,7 @@
         <div><b>PDF 용량</b></div>
         <div class="scan-radio">
           <label><input type="radio" name="scan_quality" value="1.0"> 원본 고화질</label>
-          <label><input type="radio" name="scan_quality" value="0.8" checked> 균형 (추천)</label>
+          <label><input type="radio" name="scan_quality" value="0.9" checked> 균형 (추천)</label>
           <label><input type="radio" name="scan_quality" value="0.5"> 저용량</label>
         </div>
         <p class="hint">사진마다 모서리 4개의 파란 점을 문서 끝에 맞추고 "평탄화 적용"을 누르세요. 안 누른 쪽은 저장할 때 자동으로 적용돼요. ▲▼로 순서를 바꿀 수 있어요.</p>
@@ -2334,20 +2334,34 @@ document.getElementById('scan-video-box').addEventListener('pointerdown', async 
     if(cap.focusMode) await scanTrack.applyConstraints({advanced:[{focusMode:'single-shot', pointsOfInterest:[{x:(e.clientX-rect.left)/rect.width, y:(e.clientY-rect.top)/rect.height}]}]});
   }catch(err){}
 });
-document.getElementById('scan-snap').addEventListener('click', ()=>{
+document.getElementById('scan-snap').addEventListener('click', async ()=>{
   if(!scanStream || !scanVideo.videoWidth) return;
   const box = document.getElementById('scan-video-box');
   const flash = document.createElement('div');
   flash.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.8;z-index:2005;transition:opacity .2s;';
   box.appendChild(flash);
   setTimeout(()=>{ flash.style.opacity = '0'; }, 50); setTimeout(()=>flash.remove(), 250);
-  const vw = scanVideo.videoWidth, vh = scanVideo.videoHeight, tr = scanTargetRatio();
-  let sw = vw, sh = vh;
-  if(vw / vh > tr) sw = Math.round(vh * tr); else sh = Math.round(vw / tr);
-  const c = document.createElement('canvas');
-  c.width = sw; c.height = sh;
-  c.getContext('2d').drawImage(scanVideo, Math.round((vw - sw)/2), Math.round((vh - sh)/2), sw, sh, 0, 0, sw, sh);
-  const dataUrl = c.toDataURL('image/jpeg', 0.92);
+  const tr = scanTargetRatio();
+  // 가운데를 촬영 비율에 맞게 잘라 JPEG로 만든다
+  const crop = (src, vw, vh)=>{
+    let sw = vw, sh = vh;
+    if(vw / vh > tr) sw = Math.round(vh * tr); else sh = Math.round(vw / tr);
+    const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+    c.getContext('2d').drawImage(src, Math.round((vw - sw)/2), Math.round((vh - sh)/2), sw, sh, 0, 0, sw, sh);
+    return c.toDataURL('image/jpeg', 0.95);
+  };
+  let dataUrl = null;
+  // 가능한 기기에서는 카메라의 '사진' 모드(최대 해상도)로 촬영한다. 미리보기 영상보다 훨씬 선명하다.
+  try{
+    if(window.ImageCapture && scanTrack){
+      const blob = await new ImageCapture(scanTrack).takePhoto();
+      const bmp = await createImageBitmap(blob);
+      const portraitShot = bmp.height >= bmp.width;
+      if(portraitShot === !scanIsLandscape()) dataUrl = crop(bmp, bmp.width, bmp.height);
+      bmp.close && bmp.close();
+    }
+  }catch(err){ dataUrl = null; }
+  if(!dataUrl) dataUrl = crop(scanVideo, scanVideo.videoWidth, scanVideo.videoHeight);
   scanShots.push(dataUrl);
   scanCamStatus.textContent = `촬영: ${scanShots.length}장`;
   scanThumbs.style.display = 'flex';
@@ -2521,7 +2535,7 @@ function scanCreateDoc(dataUrl){
 function scanProcess(inst, filterType, quality){
   const hidden = document.getElementById('scan-hidden-canvas');
   let natW = inst.img.naturalWidth, natH = inst.img.naturalHeight;
-  const MAX_SRC = 1800;
+  const MAX_SRC = 3200;
   if(natW > MAX_SRC || natH > MAX_SRC){
     const s = MAX_SRC / Math.max(natW, natH);
     natW = Math.round(natW * s); natH = Math.round(natH * s);
@@ -2562,7 +2576,7 @@ function scanProcess(inst, filterType, quality){
     }else{
       const blur = track(new cv.Mat());
       cv.GaussianBlur(dst, blur, new cv.Size(0, 0), 3);
-      cv.addWeighted(dst, 1.3, blur, -0.3, 0, dst);
+      cv.addWeighted(dst, 1.5, blur, -0.5, 0, dst);
     }
     cv.imshow(hidden, dst);
     return {data: hidden.toDataURL('image/jpeg', quality), width: targetW, height: targetH};
