@@ -242,6 +242,7 @@
   </div>
 
   <div class="tabs">
+    <div class="tab" data-tab="scan">스캔</div>
     <div class="tab active" data-tab="merge">합치기</div>
     <div class="tab" data-tab="split">분할</div>
     <div class="tab" data-tab="delete">페이지 삭제</div>
@@ -249,7 +250,6 @@
     <div class="tab" data-tab="insert">페이지 추가</div>
     <div class="tab" data-tab="rotate">페이지 회전</div>
     <div class="tab" data-tab="edit">편집</div>
-    <div class="tab" data-tab="scan">스캔</div>
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
     <div class="tab" data-tab="password">암호넣기</div>
   </div>
@@ -620,13 +620,11 @@
   const isKakao = /kakaotalk/i.test(ua);
   if(!/(kakaotalk|naver\(|naverapp|instagram|fban|fbav|fb_iab|everytimeapp|daumapps|line\/)/i.test(ua)) return;
   const isAndroid = /android/i.test(ua);
-  let tried = false;
-  try{ tried = sessionStorage.getItem('inappRedirectTried') === '1'; sessionStorage.setItem('inappRedirectTried','1'); }catch(e){}
-  if(!tried){   // 무한 반복을 막기 위해 한 번만 자동 이동을 시도
-    const target = isAndroid ? 'intent://' + location.href.replace(/^https?:\/\//i, '') + '#Intent;scheme=https;package=com.android.chrome;end'
-                 : (isKakao ? 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href) : '');
-    if(target) setTimeout(()=>{ location.href = target; }, 400);   // 안내 화면이 먼저 그려지도록 잠시 뒤 이동
-  }
+  const openExternal = ()=>{
+    if(isAndroid) location.href = 'intent://' + location.href.replace(/^https?:\/\//i, '') + '#Intent;scheme=https;package=com.android.chrome;end';
+    else if(isKakao) location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+    else document.getElementById('inapp-copy').click();
+  };
   const ov = document.createElement('div');
   ov.id = 'inapp-guard';
   ov.innerHTML = `
@@ -634,10 +632,12 @@
     <p style="margin:0; word-break:keep-all;">카카오톡·네이버 같은 앱 안에서는<br><b>카메라와 파일 저장이 막힐 수 있어요.</b></p>
     <div class="box">오른쪽 위(또는 아래)의 <b>[⋮] 또는 [≡] 메뉴</b>를 눌러<br><b style="color:#4ade80;">'다른 브라우저로 열기'</b>(안드로이드는 크롬, 아이폰은 사파리)를 선택해 주세요.</div>
     <div>
+      <button type="button" id="inapp-open" style="background:#16a34a;color:#fff;">🌐 기본 브라우저로 열기</button>
       <button type="button" id="inapp-copy" style="background:#2563eb;color:#fff;">🔗 주소 복사하기</button>
       <button type="button" id="inapp-skip" style="background:#374151;color:#e5e7eb;">그냥 계속 사용</button>
     </div>`;
   document.body.appendChild(ov);
+  document.getElementById('inapp-open').addEventListener('click', openExternal);
   document.getElementById('inapp-skip').addEventListener('click', ()=>ov.remove());
   document.getElementById('inapp-copy').addEventListener('click', async ()=>{
     try{ await navigator.clipboard.writeText(location.href); }
