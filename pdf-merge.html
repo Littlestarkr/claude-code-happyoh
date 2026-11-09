@@ -202,7 +202,7 @@
   #scan-magnifier{position:fixed; width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; background:#fff no-repeat; display:none; pointer-events:none; z-index:4000; box-shadow:0 4px 10px rgba(0,0,0,.3);}
   #scan-camera{display:none; flex-direction:column; align-items:center; justify-content:center; position:fixed; inset:0; background:#000; z-index:2000;}
   #scan-video-box{position:relative; width:100%; max-height:75vh; aspect-ratio:3/4; background:#111; overflow:hidden; display:flex; justify-content:center;}
-  #scan-video{width:100%; height:100%; object-fit:contain; cursor:crosshair;}
+  #scan-video{width:100%; height:100%; object-fit:cover; cursor:crosshair;}
   #scan-cam-status{position:absolute; top:10px; right:10px; color:#fff; font-weight:700; background:rgba(0,0,0,.5); padding:5px 10px; border-radius:6px; z-index:2002;}
   #scan-focus-hint{position:absolute; top:14px; left:0; right:0; text-align:center; color:rgba(255,255,255,.75); font-size:.85rem; pointer-events:none; z-index:2002;}
   #scan-focus-ring{position:absolute; width:60px; height:60px; border:2px solid #22c55e; border-radius:50%; display:none; transform:translate(-50%,-50%); pointer-events:none; z-index:2002;}
@@ -2291,7 +2291,9 @@ document.getElementById('scan-camera-btn').addEventListener('click', async ()=>{
   }
   try{
     scanStream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode:'environment', width:{ideal:3000}, height:{ideal:4000}, aspectRatio:{ideal:0.75}, advanced:[{focusMode:'continuous'}]}
+      video: (scanIsLandscape()
+        ? {facingMode:'environment', width:{ideal:4000}, height:{ideal:3000}, aspectRatio:{ideal:4/3}, advanced:[{focusMode:'continuous'}]}
+        : {facingMode:'environment', width:{ideal:3000}, height:{ideal:4000}, aspectRatio:{ideal:3/4}, advanced:[{focusMode:'continuous'}]})
     });
     scanVideo.srcObject = scanStream;
     scanTrack = scanStream.getVideoTracks()[0];
@@ -2306,14 +2308,16 @@ document.getElementById('scan-camera-btn').addEventListener('click', async ()=>{
   }
 });
 // 미리보기 상자를 실제 촬영 화면(가로/세로) 비율에 맞춰서, 보이는 그대로 촬영되게 한다
+function scanIsLandscape(){ return window.innerWidth > window.innerHeight; }
+// 촬영 비율은 항상 가로 4:3 / 세로 3:4. 카메라가 다른 비율을 주면 가운데를 잘라서 '보이는 그대로' 찍는다.
+function scanTargetRatio(){ return scanIsLandscape() ? 4/3 : 3/4; }
 function scanFitVideoBox(){
   const box = document.getElementById('scan-video-box');
-  const vw = scanVideo.videoWidth, vh = scanVideo.videoHeight;
-  if(!vw || !vh) return;
+  const r = scanTargetRatio();
   const maxW = window.innerWidth, maxH = window.innerHeight * 0.75;
-  const k = Math.min(maxW / vw, maxH / vh);
-  box.style.width = Math.floor(vw * k) + 'px';
-  box.style.height = Math.floor(vh * k) + 'px';
+  const k = Math.min(maxW, maxH * r);   // 상자의 폭
+  box.style.width = Math.floor(k) + 'px';
+  box.style.height = Math.floor(k / r) + 'px';
   box.style.maxHeight = 'none';
 }
 scanVideo.addEventListener('loadedmetadata', scanFitVideoBox);
@@ -2337,9 +2341,12 @@ document.getElementById('scan-snap').addEventListener('click', ()=>{
   flash.style.cssText = 'position:absolute;inset:0;background:#fff;opacity:.8;z-index:2005;transition:opacity .2s;';
   box.appendChild(flash);
   setTimeout(()=>{ flash.style.opacity = '0'; }, 50); setTimeout(()=>flash.remove(), 250);
+  const vw = scanVideo.videoWidth, vh = scanVideo.videoHeight, tr = scanTargetRatio();
+  let sw = vw, sh = vh;
+  if(vw / vh > tr) sw = Math.round(vh * tr); else sh = Math.round(vw / tr);
   const c = document.createElement('canvas');
-  c.width = scanVideo.videoWidth; c.height = scanVideo.videoHeight;
-  c.getContext('2d').drawImage(scanVideo, 0, 0);
+  c.width = sw; c.height = sh;
+  c.getContext('2d').drawImage(scanVideo, Math.round((vw - sw)/2), Math.round((vh - sh)/2), sw, sh, 0, 0, sw, sh);
   const dataUrl = c.toDataURL('image/jpeg', 0.92);
   scanShots.push(dataUrl);
   scanCamStatus.textContent = `촬영: ${scanShots.length}장`;
