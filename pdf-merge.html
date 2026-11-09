@@ -44,6 +44,10 @@
   html{scroll-padding-top:env(safe-area-inset-top,0px);}
   .wrap{max-width:720px; margin:0 auto; padding:24px 16px 60px;}
   h1{font-size:1.4rem; margin:0 0 4px;}
+  /* 맨 위 제목 줄: 스크롤해도 'HappyOh PDF 도구'가 위에 계속 보이게 고정 */
+  .topbar{position:sticky; top:0; z-index:1500; margin:-24px -16px 14px; padding:calc(10px + env(safe-area-inset-top)) 16px 10px; background:var(--bg); border-bottom:1px solid var(--border);}
+  .topbar h1{margin:0; font-size:1.2rem; display:flex; align-items:center; gap:8px;}
+  .topbar img{width:26px; height:26px; border-radius:6px;}
   .sub{color:var(--sub); font-size:.9rem; margin:0 0 24px;}
   .tabs{
     display:flex; gap:8px; margin-bottom:20px; background:var(--card); padding:6px; border-radius:12px;
@@ -271,7 +275,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>📄 HappyOh PDF 도구</h1>
+  <div class="topbar"><h1><img src="pdf-tool-icon-192.png" alt="">HappyOh PDF 도구</h1></div>
   <p class="sub">파일은 서버로 전송되지 않고 이 브라우저 안에서만 처리됩니다.</p>
   <div id="lib-error" style="display:none; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:10px; padding:12px 14px; margin-bottom:16px; font-size:.9rem;">
     처리 엔진을 불러오지 못했어요. 네트워크가 느리거나 일부 외부 주소가 차단된 환경일 수 있어요. Wi-Fi/데이터를 바꾸거나 새로고침(아래로 당기기)해 보세요.
