@@ -2411,6 +2411,8 @@ function scanCreateDoc(dataUrl){
     <div class="scan-doc-head">
       <b class="scan-title"></b>
       <span class="scan-doc-actions">
+        <button type="button" data-act="rotl" title="왼쪽으로 90° 돌리기">↺</button>
+        <button type="button" data-act="rotr" title="오른쪽으로 90° 돌리기">↻</button>
         <button type="button" data-act="up">▲</button>
         <button type="button" data-act="down">▼</button>
         <button type="button" data-act="del">삭제</button>
@@ -2465,6 +2467,21 @@ function scanCreateDoc(dataUrl){
   };
   img.src = dataUrl;
   window.addEventListener('resize', draw);
+
+  // 사진이 옆으로 누워 찍혔을 때 90도씩 돌리기
+  const rotate = (dir)=>{
+    const c = document.createElement('canvas');
+    c.width = img.naturalHeight; c.height = img.naturalWidth;
+    const x = c.getContext('2d');
+    x.translate(c.width/2, c.height/2); x.rotate(dir * Math.PI/2);
+    x.drawImage(img, -img.naturalWidth/2, -img.naturalHeight/2);
+    inst.pts = [{x:.02,y:.02},{x:.98,y:.02},{x:.98,y:.98},{x:.02,y:.98}];
+    inst.processed = null; inst.showEditor();
+    img.src = c.toDataURL('image/jpeg', 0.95);   // onload에서 다시 그려짐
+    scanUpdateControls();
+  };
+  wrap.querySelector('[data-act="rotl"]').addEventListener('click', ()=>rotate(-1));
+  wrap.querySelector('[data-act="rotr"]').addEventListener('click', ()=>rotate(1));
 
   let drag = -1;
   svg.addEventListener('pointerdown', e=>{
