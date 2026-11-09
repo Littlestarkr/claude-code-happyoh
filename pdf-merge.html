@@ -202,7 +202,7 @@
   #scan-magnifier{position:fixed; width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; background:#fff no-repeat; display:none; pointer-events:none; z-index:4000; box-shadow:0 4px 10px rgba(0,0,0,.3);}
   #scan-camera{display:none; flex-direction:column; align-items:center; justify-content:center; position:fixed; inset:0; background:#000; z-index:2000;}
   #scan-video-box{position:relative; width:100%; max-height:75vh; aspect-ratio:3/4; background:#111; overflow:hidden; display:flex; justify-content:center;}
-  #scan-video{width:100%; height:100%; object-fit:cover; cursor:crosshair;}
+  #scan-video{width:100%; height:100%; object-fit:contain; cursor:crosshair;}
   #scan-cam-status{position:absolute; top:10px; right:10px; color:#fff; font-weight:700; background:rgba(0,0,0,.5); padding:5px 10px; border-radius:6px; z-index:2002;}
   #scan-focus-hint{position:absolute; top:14px; left:0; right:0; text-align:center; color:rgba(255,255,255,.75); font-size:.85rem; pointer-events:none; z-index:2002;}
   #scan-focus-ring{position:absolute; width:60px; height:60px; border:2px solid #22c55e; border-radius:50%; display:none; transform:translate(-50%,-50%); pointer-events:none; z-index:2002;}
@@ -2305,6 +2305,20 @@ document.getElementById('scan-camera-btn').addEventListener('click', async ()=>{
     setStatus(scanStatus, '카메라를 열지 못했어요. 카메라 권한을 허용했는지, 크롬이나 사파리로 열었는지 확인해 주세요.', 'err');
   }
 });
+// 미리보기 상자를 실제 촬영 화면(가로/세로) 비율에 맞춰서, 보이는 그대로 촬영되게 한다
+function scanFitVideoBox(){
+  const box = document.getElementById('scan-video-box');
+  const vw = scanVideo.videoWidth, vh = scanVideo.videoHeight;
+  if(!vw || !vh) return;
+  const maxW = window.innerWidth, maxH = window.innerHeight * 0.75;
+  const k = Math.min(maxW / vw, maxH / vh);
+  box.style.width = Math.floor(vw * k) + 'px';
+  box.style.height = Math.floor(vh * k) + 'px';
+  box.style.maxHeight = 'none';
+}
+scanVideo.addEventListener('loadedmetadata', scanFitVideoBox);
+scanVideo.addEventListener('resize', scanFitVideoBox);
+window.addEventListener('resize', scanFitVideoBox);
 document.getElementById('scan-video-box').addEventListener('pointerdown', async e=>{
   if(!scanTrack) return;
   const rect = scanVideo.getBoundingClientRect();
