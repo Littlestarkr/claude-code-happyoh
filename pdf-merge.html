@@ -164,6 +164,12 @@
     background:var(--danger); color:#fff; border:2px solid #fff; font-size:12px; line-height:20px;
     text-align:center; cursor:pointer; padding:0; touch-action:manipulation;
   }
+  .privacy-note{
+    background:var(--bg); border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; margin-bottom:14px; font-size:.82rem; color:var(--sub); line-height:1.5;
+  }
+  .privacy-note b{color:var(--text);}
+  #edit-drop{display:block;}
   .pen-overlay{position:absolute; inset:0; z-index:5; cursor:crosshair; touch-action:none; background:rgba(37,99,235,.05);}
   .pen-rect{position:absolute; border:2px solid var(--accent); background:rgba(37,99,235,.15); pointer-events:none;}
   .pad-modal{
@@ -391,6 +397,7 @@
   <!-- 편집 (서명·이미지 넣기) -->
   <div class="panel" id="panel-edit">
     <div class="card">
+      <div class="privacy-note">🔒 <b>안심하고 쓰세요.</b> 불러온 PDF와 서명은 이 기기의 브라우저 안에서만 처리되며, 웹(서버)으로 전송되거나 저장되지 않아요. 편집한 파일도 이 기기에만 내려받아지고, 화면을 닫으면 작업 내용은 사라져요.</div>
       <label class="drop" id="edit-drop" for="edit-input">
         편집할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
         <input type="file" id="edit-input" accept="application/pdf">
