@@ -2682,6 +2682,43 @@ function scanDetectCorners(img){
   finally{ mats.forEach(m=>{ try{ m.delete(); }catch(e){} }); }
 }
 
+
+// 평탄화 결과의 가장자리에 남은 어두운 띠(종이 바깥 부분)를 흰색으로 지운다
+function scanClearEdgeBands(dst){
+  const w = dst.cols, h = dst.rows, ch = dst.channels(), d = dst.data;
+  const lum = (x, y)=>{
+    const i = (y*w + x) * ch;
+    return ch === 1 ? d[i] : (d[i] + d[i+1] + d[i+2]) / 3;
+  };
+  const rowDark = y=>{ let n = 0; for(let x=0;x<w;x++) if(lum(x,y) < 110) n++; return n / w; };
+  const colDark = x=>{ let n = 0; for(let y=0;y<h;y++) if(lum(x,y) < 110) n++; return n / h; };
+  // 가장자리에서 시작해 연속해서 어두운 줄이 이어지는 끝까지 찾는다(작은 끊김 3줄까지 허용)
+  const band = (len, maxN, fracAt)=>{
+    let last = -1, gap = 0;
+    for(let i=0; i<maxN && i<len; i++){
+      if(fracAt(i) > 0.3){ last = i; gap = 0; } else if(++gap > 5) break;
+    }
+    return last + 1;    // 지울 줄 수
+  };
+  const maxY = Math.round(h * 0.05), maxX = Math.round(w * 0.05);
+  const top = band(h, maxY, y=>rowDark(y));
+  const bottom = band(h, maxY, i=>rowDark(h-1-i));
+  const left = band(w, maxX, x=>colDark(x));
+  const right = band(w, maxX, i=>colDark(w-1-i));
+  const pad = 3;   // 번진 가장자리까지 조금 더 지움
+  const paint = (x0, y0, x1, y1)=>{
+    for(let y=Math.max(0,y0); y<Math.min(h,y1); y++)
+      for(let x=Math.max(0,x0); x<Math.min(w,x1); x++){
+        const i = (y*w + x) * ch;
+        for(let c=0;c<Math.min(ch,3);c++) d[i+c] = 255;
+      }
+  };
+  if(top)    paint(0, 0, w, top + pad);
+  if(bottom) paint(0, h - bottom - pad, w, h);
+  if(left)   paint(0, 0, left + pad, h);
+  if(right)  paint(w - right - pad, 0, w, h);
+}
+
 // 모서리 4점으로 원근 보정(평탄화) + 필터
 function scanProcess(inst, filterType, quality){
   const hidden = document.getElementById('scan-hidden-canvas');
@@ -2734,6 +2771,7 @@ function scanProcess(inst, filterType, quality){
       cv.GaussianBlur(dst, blur, new cv.Size(0, 0), 3);
       cv.addWeighted(dst, 1.5, blur, -0.5, 0, dst);
     }
+    scanClearEdgeBands(dst);
     cv.imshow(hidden, dst);
     return {data: hidden.toDataURL('image/jpeg', quality), width: targetW, height: targetH};
   }finally{
