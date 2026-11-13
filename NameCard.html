@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>명함 스캔 → 연락처 저장</title>
+<link rel="manifest" href="namecard.webmanifest">
+<meta name="theme-color" content="#003078">
+<link rel="icon" type="image/png" href="namecard-icon-192.png">
+<link rel="apple-touch-icon" href="namecard-apple-touch-icon.png">
 <style>
   :root { --navy:#003078; --bg:#f4f6fa; --line:#d9deea; }
   * { box-sizing:border-box; }
@@ -190,6 +194,10 @@ function parseCard(text) {
 /* ===== PARSER_END ===== */
 
 if (typeof document !== 'undefined') {
+  // 설치형 앱용 서비스 워커 (범위: NameCard.html 한 페이지)
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('namecard-sw.js', { scope: './NameCard.html' }).catch(() => {});
+  }
   const IDS = ['lname','fname','org','dept','title','mobile','tel','ext','fax','email','web','addr'];
   const el = id => document.getElementById(id);
   const val = id => el(id).value.trim();
