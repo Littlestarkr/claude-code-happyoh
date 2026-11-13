@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>명함 스캔 → 연락처 저장</title>
+<style>
+  :root { --navy:#003078; --bg:#f4f6fa; --line:#d9deea; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif; background:var(--bg); color:#1b1f2a; }
+  .wrap { max-width:520px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:20px; margin:4px 0; color:var(--navy); }
+  p.sub { margin:0 0 14px; font-size:13px; color:#5a6275; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  label.f { display:block; font-size:12px; font-weight:600; color:#5a6275; margin:12px 0 4px; }
+  input[type=text], input[type=tel], input[type=email], textarea { width:100%; padding:11px 12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:#fafbfd; font-family:inherit; }
+  input:focus, textarea:focus { outline:2px solid var(--navy); background:#fff; }
+  textarea { min-height:90px; font-size:13px; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; }
+  .btns { display:flex; gap:10px; }
+  .pick { flex:1; text-align:center; padding:14px 8px; font-size:15px; font-weight:700; border-radius:12px; cursor:pointer; background:var(--navy); color:#fff; }
+  .pick.alt { background:#e8edf7; color:var(--navy); }
+  .pick input { display:none; }
+  button { width:100%; margin-top:14px; padding:14px; font-size:16px; font-weight:700; border:0; border-radius:12px; cursor:pointer; background:var(--navy); color:#fff; }
+  button.alt { background:#e8edf7; color:var(--navy); margin-top:10px; }
+  #preview { display:none; width:100%; border-radius:10px; margin-top:12px; border:1px solid var(--line); }
+  .status { margin-top:12px; font-size:13px; color:#5a6275; min-height:18px; }
+  .bar { height:6px; background:#e6eaf2; border-radius:3px; overflow:hidden; margin-top:8px; display:none; }
+  .bar i { display:block; height:100%; width:0; background:var(--navy); transition:width .2s; }
+  .hint { font-size:12px; color:#7a8296; margin-top:6px; line-height:1.5; }
+  details { margin-top:12px; font-size:13px; }
+  .help { font-size:13px; color:#4a5266; line-height:1.65; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>명함 스캔 → 연락처 저장</h1>
+  <p class="sub">명함을 찍어 올리면 글자를 읽어 칸을 채웁니다. 확인·수정 후 저장하세요.</p>
+
+  <div class="card">
+    <div class="btns">
+      <label class="pick">📷 촬영<input type="file" id="cam" accept="image/*" capture="environment"></label>
+      <label class="pick alt">🖼 사진 선택<input type="file" id="gal" accept="image/*"></label>
+    </div>
+    <img id="preview" alt="명함 미리보기">
+    <div class="bar" id="bar"><i id="barfill"></i></div>
+    <div class="status" id="status">명함을 평평한 곳에 놓고 밝게, 글자가 선명하게 찍어 주세요.</div>
+    <div class="hint">처음 한 번은 한글 인식 데이터(약 수 MB)를 내려받아 시간이 걸립니다. 사진은 서버로 전송되지 않고 폰 안에서만 처리됩니다.</div>
+  </div>
+
+  <form class="card" id="f" autocomplete="off" onsubmit="return false">
+    <div class="row">
+      <div><label class="f" for="lname" style="margin-top:0">성</label><input type="text" id="lname"></div>
+      <div><label class="f" for="fname" style="margin-top:0">이름</label><input type="text" id="fname"></div>
+    </div>
+    <label class="f" for="org">회사</label><input type="text" id="org">
+    <label class="f" for="dept">부서</label><input type="text" id="dept">
+    <label class="f" for="title">직책</label><input type="text" id="title">
+    <label class="f" for="mobile">휴대폰</label><input type="tel" id="mobile">
+    <div class="row">
+      <div><label class="f" for="tel">회사 전화</label><input type="tel" id="tel"></div>
+      <div><label class="f" for="ext">내선</label><input type="text" id="ext"></div>
+    </div>
+    <label class="f" for="fax">팩스</label><input type="tel" id="fax">
+    <label class="f" for="email">이메일</label><input type="email" id="email">
+    <label class="f" for="web">웹사이트</label><input type="text" id="web">
+    <label class="f" for="addr">주소</label><input type="text" id="addr">
+
+    <button type="button" id="dl">연락처 파일(.vcf) 받기</button>
+    <button type="button" class="alt" id="share" hidden>공유로 바로 열기</button>
+    <button type="button" class="alt" id="reset">다음 명함</button>
+    <div class="status" id="msg"></div>
+
+    <details>
+      <summary>인식된 원문 보기 (잘못 읽힌 곳 확인용)</summary>
+      <textarea id="raw" readonly></textarea>
+    </details>
+  </form>
+
+  <div class="card help">
+    <b>저장 방법 (갤럭시)</b><br>
+    1. 'vcf 받기' 누르기 → 2. 다운로드 알림 또는 '내 파일 → 다운로드'에서 파일 열기 → 3. 삼성 연락처 앱에서 '저장'<br>
+    <span style="color:#7a8296">※ 웹페이지는 연락처 앱에 직접 쓸 수 없어서 마지막 '저장' 한 번은 직접 눌러야 합니다.</span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+/* ===== PARSER_START ===== */
+function parseCard(text) {
+  const out = { lname:'', fname:'', org:'', dept:'', title:'', mobile:'', tel:'', ext:'', fax:'', email:'', web:'', addr:'' };
+  // OCR 정리: 한글 사이 공백 제거, 줄 단위 분리
+  let lines = text.split(/\r?\n/).map(s => s.replace(/[ \t]+/g, ' ').trim()).filter(Boolean);
+  lines = lines.map(s => /^([가-힣]\s)+[가-힣]$/.test(s) ? s.replace(/\s/g, '') : s);
+  const used = new Set();
+  const take = i => { used.add(i); return lines[i]; };
+
+  // 이메일 / 웹
+  lines.forEach((l, i) => {
+    const re = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+    const m = l.match(re) || l.replace(/\s/g, '').match(re);
+    if (m && !out.email) { out.email = m[0]; used.add(i); }
+  });
+  lines.forEach((l, i) => {
+    if (used.has(i)) return;
+    const m = l.match(/(https?:\/\/\S+|www\.[A-Za-z0-9.\-\/]+)/i);
+    if (m && !out.web) { out.web = m[0]; used.add(i); }
+  });
+
+  // 전화번호
+  const numRe = /(\+?82[-.\s]?)?\(?0\d{1,3}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}/;
+  const fixNum = s => s.replace(/[Oo]/g, '0').replace(/[lI|]/g, '1');
+  lines.forEach((l, i) => {
+    const m = fixNum(l).match(numRe);
+    if (!m) return;
+    let num = m[0].replace(/^\+?82[-.\s]?/, '0').replace(/[()]/g, '').replace(/\s+/g, '-').replace(/\.+/g, '-');
+    const head = l.slice(0, 12).toLowerCase();
+    const isFax = /(^|\s)f(ax)?\b|팩스/.test(head) || /^f[\s:.]/i.test(l);
+    const isMob = /(^|\s)m(obile)?\b|휴대|핸드폰|mobile|cell/.test(head) || /^01[016789]/.test(num.replace(/-/g, ''));
+    const isTel = /(^|\s)t(el)?\b|전화|직통/.test(head);
+    if (isFax) { if (!out.fax) out.fax = num; }
+    else if (isMob) { if (!out.mobile) out.mobile = num; }
+    else if (isTel || !out.tel) { if (!out.tel) out.tel = num; }
+    else if (!out.fax && /^0505|^0[2-6]\d?-?\d{3,4}-?\d{4}$/.test(num) && out.tel) { out.fax = num; }
+    const ex = l.match(/\[\s*(?:내선\s*)?(\d{2,5})\s*\]|내선\s*(\d{2,5})|ext\.?\s*(\d{2,5})/i);
+    if (ex && !out.ext) out.ext = ex[1] || ex[2] || ex[3];
+    used.add(i);
+  });
+
+  // 주소
+  const addrRe = /(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)|[가-힣]+(시|군|구)\s|[가-힣0-9]+(로|길)\s?\d/;
+  lines.forEach((l, i) => {
+    if (used.has(i) || out.addr) return;
+    if (addrRe.test(l) && /\d/.test(l)) {
+      let a = take(i);
+      if (lines[i + 1] && !used.has(i + 1) && /^\(.+\)$|^[가-힣0-9\s]*(층|호|동|빌딩)/.test(lines[i + 1])) a += ' ' + take(i + 1);
+      out.addr = a;
+    }
+  });
+
+  // 직책 / 회사 / 부서
+  const titleRe = /(대표|이사|사장|부사장|전무|상무|부장|차장|과장|대리|사원|팀장|본부장|실장|센터장|원장|교수|위원|지점장|지배인|CEO|CTO|CFO|Director|Manager|Engineer|President|Professor|Researcher|고문|컨설턴트|변호사|세무사|회계사|연구원|선임|책임|수석)/i;
+  const orgRe = /(주식회사|\(주\)|㈜|은행|공사|공단|협회|협의회|재단|연구원|대학교?|센터|그룹|Inc\.?|Co\.?,?\s*Ltd|Corp|Bank|Group|Company)/i;
+  const deptRe = /(본부|팀|부$|실$|지점|지사|과$|센터|사업부|영업|연구소|\bDept|Division|Team)/i;
+  lines.forEach((l, i) => {
+    if (used.has(i)) return;
+    // '강남지역본부 | 고경력직원(교수)' 같은 구분자 줄
+    const parts = l.split(/\s*[|/·ㅣ]\s*/).filter(Boolean);
+    if (parts.length > 1) {
+      parts.forEach(p => {
+        if (!out.org && orgRe.test(p) && !deptRe.test(p)) out.org = p;
+        else if (!out.dept && deptRe.test(p) && !titleRe.test(p)) out.dept = p;
+        else if (!out.title && titleRe.test(p)) out.title = p;
+        else if (!out.dept) out.dept = p;
+        else if (!out.title) out.title = p;
+      });
+      used.add(i);
+    }
+  });
+  lines.forEach((l, i) => {
+    if (used.has(i)) return;
+    if (!out.title && titleRe.test(l) && l.length <= 20) { out.title = take(i); return; }
+    if (!out.org && orgRe.test(l)) { out.org = take(i); return; }
+    if (!out.dept && deptRe.test(l) && l.length <= 20) { out.dept = take(i); return; }
+  });
+
+  // 이름: 한글 2~4자 단독 줄 → 영문 2~3단어 줄
+  let nameLine = '';
+  lines.forEach((l, i) => {
+    if (used.has(i) || nameLine) return;
+    const t = l.replace(/\s/g, '');
+    if (/^[가-힣]{2,4}$/.test(t)) { nameLine = t; used.add(i); }
+  });
+  if (!nameLine) lines.forEach((l, i) => {
+    if (used.has(i) || nameLine) return;
+    if (/^[A-Z][a-z]+(\s[A-Z][a-z]+){1,2}$/.test(l)) { nameLine = l; used.add(i); }
+  });
+  if (/[가-힣]/.test(nameLine)) { out.lname = nameLine.slice(0, 1); out.fname = nameLine.slice(1); }
+  else if (nameLine) { const p = nameLine.split(' '); out.fname = p.slice(0, -1).join(' '); out.lname = p[p.length - 1]; }
+
+  return out;
+}
+/* ===== PARSER_END ===== */
+
+if (typeof document !== 'undefined') {
+  const IDS = ['lname','fname','org','dept','title','mobile','tel','ext','fax','email','web','addr'];
+  const el = id => document.getElementById(id);
+  const val = id => el(id).value.trim();
+  const esc = s => s.replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/;/g,'\\;').replace(/,/g,'\\,');
+  const say = (t, id='status') => { el(id).textContent = t; };
+
+  function buildVcf() {
+    const L = ['BEGIN:VCARD', 'VERSION:3.0'];
+    L.push('N:' + esc(val('lname')) + ';' + esc(val('fname')) + ';;;');
+    L.push('FN:' + esc(val('lname') + val('fname')));
+    if (val('org') || val('dept')) L.push('ORG:' + esc(val('org')) + ';' + esc(val('dept')));
+    if (val('title')) L.push('TITLE:' + esc(val('title')));
+    if (val('mobile')) L.push('TEL;TYPE=CELL:' + val('mobile'));
+    if (val('tel')) L.push('TEL;TYPE=WORK,VOICE:' + val('tel'));
+    if (val('fax')) L.push('TEL;TYPE=WORK,FAX:' + val('fax'));
+    if (val('email')) L.push('EMAIL;TYPE=WORK:' + val('email'));
+    if (val('web')) L.push('URL:' + val('web'));
+    if (val('addr')) L.push('ADR;TYPE=WORK:;;' + esc(val('addr')) + ';;;;');
+    if (val('ext')) L.push('NOTE:' + esc('내선 ' + val('ext')));
+    L.push('END:VCARD');
+    return L.join('\r\n') + '\r\n';
+  }
+  const fileName = () => ((val('lname') + val('fname')) || 'contact') + '.vcf';
+
+  // 이미지 전처리: 크기 축소 + 흑백 + 대비
+  function prep(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 1800, s = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0, c.width, c.height);
+        const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+        for (let i = 0; i < p.length; i += 4) {
+          let y = 0.299 * p[i] + 0.587 * p[i+1] + 0.114 * p[i+2];
+          y = Math.max(0, Math.min(255, (y - 128) * 1.4 + 128));
+          p[i] = p[i+1] = p[i+2] = y;
+        }
+        g.putImageData(d, 0, 0);
+        el('preview').src = url; el('preview').style.display = 'block';
+        c.toBlob(b => resolve(b), 'image/png');
+      };
+      img.onerror = () => reject(new Error('이미지를 열 수 없습니다.'));
+      img.src = url;
+    });
+  }
+
+  async function handle(file) {
+    if (!file) return;
+    if (typeof Tesseract === 'undefined') { say('글자 인식 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; }
+    el('bar').style.display = 'block'; el('barfill').style.width = '3%';
+    say('사진 준비 중…');
+    try {
+      const blob = await prep(file);
+      const res = await Tesseract.recognize(blob, 'kor+eng', {
+        logger: m => {
+          if (m.status === 'recognizing text') { el('barfill').style.width = Math.round(m.progress * 100) + '%'; say('글자 읽는 중… ' + Math.round(m.progress * 100) + '%'); }
+          else if (m.status && m.status.includes('loading')) say('인식 데이터 불러오는 중… (처음 한 번만 오래 걸립니다)');
+        }
+      });
+      const text = res.data.text;
+      el('raw').value = text;
+      const r = parseCard(text);
+      IDS.forEach(k => { if (r[k]) el(k).value = r[k]; });
+      el('barfill').style.width = '100%';
+      say('완료! 칸의 내용이 맞는지 확인하고 수정한 뒤 저장하세요.');
+      el('f').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) { say('인식에 실패했습니다: ' + e.message); }
+  }
+  el('cam').addEventListener('change', e => handle(e.target.files[0]));
+  el('gal').addEventListener('change', e => handle(e.target.files[0]));
+
+  el('dl').addEventListener('click', () => {
+    if (!val('lname') && !val('fname')) { say('이름을 입력해 주세요.', 'msg'); return; }
+    const url = URL.createObjectURL(new Blob([buildVcf()], { type: 'text/vcard;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = fileName();
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    say('파일을 받았습니다. 다운로드 알림이나 내 파일에서 열어 저장하세요.', 'msg');
+  });
+
+  el('reset').addEventListener('click', () => {
+    IDS.forEach(k => el(k).value = ''); el('raw').value = '';
+    el('preview').style.display = 'none'; el('bar').style.display = 'none';
+    el('cam').value = ''; el('gal').value = '';
+    say('다음 명함을 찍어 주세요.'); say('', 'msg');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  try {
+    const t = new File(['x'], 'x.vcf', { type: 'text/vcard' });
+    if (navigator.canShare && navigator.canShare({ files: [t] })) {
+      el('share').hidden = false;
+      el('share').addEventListener('click', async () => {
+        try { await navigator.share({ files: [new File([buildVcf()], fileName(), { type: 'text/vcard' })] }); }
+        catch (e) { say('공유가 취소되었습니다.', 'msg'); }
+      });
+    }
+  } catch (e) {}
+}
+</script>
+</body>
+</html>
