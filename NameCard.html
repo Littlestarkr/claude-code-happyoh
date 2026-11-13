@@ -92,7 +92,13 @@ function parseCard(text) {
   const out = { lname:'', fname:'', org:'', dept:'', title:'', mobile:'', tel:'', ext:'', fax:'', email:'', web:'', addr:'' };
   // OCR 정리: 한글 사이 공백 제거, 줄 단위 분리
   let lines = text.split(/\r?\n/).map(s => s.replace(/[ \t]+/g, ' ').trim()).filter(Boolean);
-  lines = lines.map(s => /^([가-힣]\s)+[가-힣]$/.test(s) ? s.replace(/\s/g, '') : s);
+  lines = lines.map(s => {
+    const toks = s.split(' ');
+    const singles = toks.filter(t => /^[가-힣]$/.test(t)).length;
+    // 한 글자씩 떨어진 한글이 많은 줄('강 남 지 역 본부')은 한글 사이 공백을 제거
+    if (toks.length >= 2 && singles >= 2 && singles / toks.length >= 0.4) return s.replace(/([가-힣])\s+(?=[가-힣])/g, '$1');
+    return s;
+  });
   const used = new Set();
   const take = i => { used.add(i); return lines[i]; };
 
@@ -208,30 +214,48 @@ if (typeof document !== 'undefined') {
   }
   const fileName = () => ((val('lname') + val('fname')) || 'contact') + '.vcf';
 
-  // 이미지 전처리: 크기 축소 + 흑백 + 대비
-  function prep(file) {
+  // 이미지 불러오기 → 확대/축소한 캔버스
+  function loadCanvas(file) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
-        const max = 1800, s = Math.min(1, max / Math.max(img.width, img.height));
+        const target = 2000, s = Math.min(2.5, target / Math.max(img.width, img.height));
         const c = document.createElement('canvas');
         c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-        const g = c.getContext('2d');
-        g.drawImage(img, 0, 0, c.width, c.height);
-        const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
-        for (let i = 0; i < p.length; i += 4) {
-          let y = 0.299 * p[i] + 0.587 * p[i+1] + 0.114 * p[i+2];
-          y = Math.max(0, Math.min(255, (y - 128) * 1.4 + 128));
-          p[i] = p[i+1] = p[i+2] = y;
-        }
-        g.putImageData(d, 0, 0);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         el('preview').src = url; el('preview').style.display = 'block';
-        c.toBlob(b => resolve(b), 'image/png');
+        resolve(c);
       };
       img.onerror = () => reject(new Error('이미지를 열 수 없습니다.'));
       img.src = url;
     });
+  }
+  // 변형: 'color'(원본 흑백), 'contrast'(대비 강화), 'invert'(반전: 어두운 바탕의 흰 글씨용)
+  function variant(src, mode) {
+    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+    const g = c.getContext('2d'); g.drawImage(src, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+    for (let i = 0; i < p.length; i += 4) {
+      let y = 0.299 * p[i] + 0.587 * p[i+1] + 0.114 * p[i+2];
+      if (mode !== 'color') y = Math.max(0, Math.min(255, (y - 128) * 1.5 + 128));
+      if (mode === 'invert') y = 255 - y;
+      p[i] = p[i+1] = p[i+2] = y;
+    }
+    g.putImageData(d, 0, 0);
+    return new Promise(r => c.toBlob(r, 'image/png'));
+  }
+  // 여러 번 읽은 결과 합치기 (이미 있는 줄은 중복 제외)
+  function mergeTexts(texts) {
+    const norm = s => s.replace(/\s+/g, '').toLowerCase();
+    const seen = [], out = [];
+    texts.forEach(t => t.split(/\r?\n/).forEach(l => {
+      const n = norm(l);
+      if (n.length < 2) return;
+      if (seen.some(x => x === n || x.includes(n) || n.includes(x) && n.length - x.length < 2)) return;
+      seen.push(n); out.push(l.trim());
+    }));
+    return out.join('\n');
   }
 
   async function handle(file) {
@@ -239,22 +263,36 @@ if (typeof document !== 'undefined') {
     if (typeof Tesseract === 'undefined') { say('글자 인식 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; }
     el('bar').style.display = 'block'; el('barfill').style.width = '3%';
     say('사진 준비 중…');
+    let worker;
     try {
-      const blob = await prep(file);
-      const res = await Tesseract.recognize(blob, 'kor+eng', {
+      const src = await loadCanvas(file);
+      const modes = ['color', 'contrast', 'invert'];
+      let pass = 0;
+      worker = await Tesseract.createWorker('kor+eng', 1, {
         logger: m => {
-          if (m.status === 'recognizing text') { el('barfill').style.width = Math.round(m.progress * 100) + '%'; say('글자 읽는 중… ' + Math.round(m.progress * 100) + '%'); }
-          else if (m.status && m.status.includes('loading')) say('인식 데이터 불러오는 중… (처음 한 번만 오래 걸립니다)');
+          if (m.status === 'recognizing text') {
+            const pct = Math.round(((pass + m.progress) / modes.length) * 100);
+            el('barfill').style.width = pct + '%'; say('글자 읽는 중… ' + pct + '%');
+          } else if (m.status && m.status.includes('loading')) say('인식 데이터 불러오는 중… (처음 한 번만 오래 걸립니다)');
         }
       });
-      const text = res.data.text;
+      // 11: 명함처럼 흩어진 글자를 찾는 모드
+      await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1' });
+      const texts = [];
+      for (pass = 0; pass < modes.length; pass++) {
+        const blob = await variant(src, modes[pass]);
+        const res = await worker.recognize(blob);
+        texts.push(res.data.text);
+      }
+      const text = mergeTexts(texts);
       el('raw').value = text;
       const r = parseCard(text);
       IDS.forEach(k => { if (r[k]) el(k).value = r[k]; });
       el('barfill').style.width = '100%';
-      say('완료! 칸의 내용이 맞는지 확인하고 수정한 뒤 저장하세요.');
+      say('완료! 칸의 내용이 맞는지 확인하고 수정한 뒤 저장하세요. 빈 칸은 직접 입력하세요.');
       el('f').scrollIntoView({ behavior: 'smooth' });
     } catch (e) { say('인식에 실패했습니다: ' + e.message); }
+    finally { if (worker) { try { await worker.terminate(); } catch (e) {} } }
   }
   el('cam').addEventListener('change', e => handle(e.target.files[0]));
   el('gal').addEventListener('change', e => handle(e.target.files[0]));
