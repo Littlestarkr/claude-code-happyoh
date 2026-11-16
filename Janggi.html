@@ -275,6 +275,7 @@
   <div class="legend">
     <span><i class="sw" style="border-color:var(--accent);background:rgba(224,138,42,.25)"></i>상대의 최근 수</span>
     <span><i class="sw" style="border-color:var(--sel)"></i>선택 / 이동 가능</span>
+    <span style="flex-basis:100%">반복 규칙: 다른 수가 있는데도 같은 수를 5회 넘게 반복하면 경고, 10회째 소극적 플레이로 패배 (피할 수 없는 수는 제외)</span>
   </div>
 
   <div class="pos-panel" id="posPanel" hidden>
@@ -303,7 +304,7 @@
 
     <p class="pos-sub">내가 둘 진영</p>
     <div class="seg sm" id="posSideSeg" role="group" aria-label="내가 둘 진영">
-      <button data-v="1">초 (아래· 초록색)</button><button data-v="-1">한 (위 · 붉은색)</button>
+      <button data-v="1">초 (아래 · 초록색)</button><button data-v="-1">한 (위 · 붉은색)</button>
     </div>
     <p class="pos-sub">시작 차례</p>
     <div class="seg sm" id="posTurnSeg" role="group" aria-label="시작 차례">
@@ -564,10 +565,14 @@ function negamax(b, depth, alpha, beta, side, ply) {
 }
 
 // 컴퓨터의 수 결정
-function think(board, side, level) {
+function think(board, side, level, ban) {
   var b = Int8Array.from(board);
   var root = legalMoves(b, side);
   if (!root.length) return -1;
+  if (ban && ban.length) {
+    var allowed = root.filter(function (x) { return ban.indexOf(x) < 0; });
+    if (allowed.length) root = allowed;
+  }
   if (root.length === 1) return root[0];
   var cfg = LEVELS[level] || LEVELS[3];
   var start = Date.now();
@@ -647,6 +652,9 @@ function think(board, side, level) {
   };
 
   var board, history, turn, gameOver, winner, selected, userMoves, lastAI, checkUser, thinking;
+  var endReason = '';
+  // 같은 수 반복 규칙: 경고 5회 초과, 10회 도달 시 반복한 쪽 패배 (다른 수가 있을 때만)
+  var REP_WARN = 5, REP_LOSE = 10;
   var searchId = 0, pending = null, worker = null, justMoved = -1;
   var userSide = 1; // 1 = 내가 초, -1 = 내가 한 (포지션 설정에서만 바뀜; 빠른 새 게임은 항상 초)
   var level = 3;
@@ -765,6 +773,11 @@ function think(board, side, level) {
     } else {
       statusEl.innerHTML = '<i class="dot" style="background:' + sideColorVar(userSide) + '"></i><strong>나의 차례</strong>' + (checkUser ? '<span class="warn">장군!</span>' : '');
     }
+    if (!gameOver) {
+      var ru = repCount(userSide), ra = repCount(-userSide);
+      if (ru > REP_WARN) statusEl.innerHTML += '<span class="warn">⚠ 같은 수 반복 ' + ru + '회 — ' + REP_LOSE + '회가 되면 소극적 플레이로 패배</span>';
+      if (ra > REP_WARN) statusEl.innerHTML += '<span class="warn">⚠ 컴퓨터가 같은 수 ' + ra + '회 반복 중 — ' + REP_LOSE + '회 시 컴퓨터 패</span>';
+    }
     movesEl.textContent = LEVEL_NAME[level] + ' · ' + history.length + '수';
 
     document.querySelectorAll('#levelSeg button').forEach(function (btn) {
@@ -791,8 +804,9 @@ function think(board, side, level) {
   function sideColorVar(s) { return s === 1 ? 'var(--cho)' : 'var(--han)'; }
 
   function winnerLabel() {
-    if (winner === userSide) return '승리 · <strong style="color:' + sideColorVar(userSide) + '">나 (' + sideName(userSide) + ')</strong>';
-    if (winner === -userSide) return '승리 · <strong style="color:' + sideColorVar(-userSide) + '">컴퓨터 (' + sideName(-userSide) + ')</strong>';
+    var why = endReason ? '<br><small>' + endReason + '</small>' : '';
+    if (winner === userSide) return '승리 · <strong style="color:' + sideColorVar(userSide) + '">나 (' + sideName(userSide) + ')</strong>' + why;
+    if (winner === -userSide) return '승리 · <strong style="color:' + sideColorVar(-userSide) + '">컴퓨터 (' + sideName(-userSide) + ')</strong>' + why;
     return '무승부';
   }
 
@@ -803,14 +817,49 @@ function think(board, side, level) {
       '<span class="' + aiCls + '">컴퓨터 · ' + sideName(-userSide) + '</span>';
   }
 
+  // 한 쪽이 연속으로 같은 수(왕복)를 반복한 횟수. own: 그 쪽의 수 목록(시간순)
+  function repCountList(own) {
+    var n = own.length, R = 0;
+    while (R < n) {
+      var e = own[n - 1 - R];
+      if (!e.alt || e.cap) break;             // 선택지가 없었던 수·기물을 잡은 수는 반복으로 보지 않음
+      if (R > 0) {
+        var nx = own[n - R]; // 바로 다음(더 최근) 수
+        var f = e.m >> 7, t = e.m & 127;
+        if (((nx.m >> 7) !== t) || ((nx.m & 127) !== f)) break; // 왕복이 아니면 중단
+      }
+      R++;
+    }
+    return Math.ceil(R / 2);
+  }
+  function repCount(side) {
+    return repCountList(history.filter(function (h) { return h.side === side; }));
+  }
+  // side가 m을 두면 반복 횟수가 경고선(5회)을 넘는가 → 컴퓨터가 피할 수
+  function repBanList(side) {
+    var lm = legalMoves(board, side), own = history.filter(function (h) { return h.side === side; }), ban = [];
+    if (lm.length < 2) return ban;
+    lm.forEach(function (m) {
+      var e = { m: m, cap: board[m & 127], alt: true };
+      if (repCountList(own.concat([e])) > REP_WARN) ban.push(m);
+    });
+    return ban;
+  }
+
   function applyMove(m, side) {
     var f = m >> 7, t = m & 127;
-    history.push({ m: m, cap: board[t], side: side });
+    var alt = legalMoves(board, side).length > 1; // 다른 선택지가 있었는가
+    history.push({ m: m, cap: board[t], side: side, alt: alt });
     board[t] = board[f]; board[f] = 0;
     if (side === -userSide) lastAI = m;
     justMoved = t;
     selected = null;
     turn = -side;
+    var rn = repCount(side);
+    if (rn >= REP_LOSE) {
+      endGame(-side, '같은 수 ' + rn + '회 반복(소극적 플레이) · ' + (side === userSide ? '나' : '컴퓨터') + '(' + sideName(side) + ') 반칙패');
+      return;
+    }
     afterMove(side);
   }
 
@@ -834,9 +883,10 @@ function think(board, side, level) {
   // 마지막 수를 판 위에서 확인할 수 있도록 결과 창은 잠시 뒤에 띄움
   var OVERLAY_DELAY = 2000, showOverlay = false, overlayTimer = null;
 
-  function endGame(w) {
+  function endGame(w, reason) {
     gameOver = true;
     winner = w;
+    endReason = reason || '';
     thinking = false;
     showOverlay = false;
     clearTimeout(overlayTimer);
@@ -848,7 +898,7 @@ function think(board, side, level) {
   function makeWorker() {
     try {
       var src = document.getElementById('engine').textContent +
-        '\nonmessage=function(e){var d=e.data;postMessage({id:d.id,move:think(d.board,d.side,d.level)});};';
+        '\nonmessage=function(e){var d=e.data;postMessage({id:d.id,move:think(d.board,d.side,d.level,d.ban)});};';
       var w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
       w.onmessage = function (e) {
         if (pending && e.data.id === pending.id) { var p = pending; pending = null; p.done(e.data.move); }
@@ -862,7 +912,7 @@ function think(board, side, level) {
     } catch (e) { return null; }
   }
   function runLocal(p) {
-    setTimeout(function () { p.done(think(p.board, p.side, p.level)); }, 30);
+    setTimeout(function () { p.done(think(p.board, p.side, p.level, p.ban)); }, 30);
   }
 
   function requestAI() {
@@ -870,7 +920,7 @@ function think(board, side, level) {
     render();
     var id = ++searchId, started = Date.now(), aiSide = -userSide;
     var req = {
-      id: id, board: Array.from(board), side: aiSide, level: level,
+      id: id, board: Array.from(board), side: aiSide, level: level, ban: repBanList(aiSide),
       done: function (m) {
         if (id !== searchId) return;
         var wait = Math.max(0, 400 - (Date.now() - started));
@@ -884,7 +934,7 @@ function think(board, side, level) {
     };
     if (worker) {
       pending = req;
-      worker.postMessage({ id: id, board: req.board, side: aiSide, level: level });
+      worker.postMessage({ id: id, board: req.board, side: aiSide, level: level, ban: req.ban });
     } else runLocal(req);
   }
 
@@ -1153,7 +1203,7 @@ function think(board, side, level) {
       '첨부된 사진은 한국 장기(Janggi) 보드의 현재 상황입니다.',
       '보드를 세로 10줄(row 0~9, row 0이 가장 위쪽 "한(漢)" 진영, row 9가 가장 아래쪽 "초(楚)" 진영), 가로 9칸(col 0~8, 왼쪽부터)의 교차점 좌표계로 인식해 주세요.',
       '각 말의 종류는 다음 한글 한 글자 중 하나로 표기합니다: 궁, 사, 차, 포, 마, 상, 졸(한 진영의 병사), 병(초 진영의 병사).',
-      '각 말의 소속(side)은 "han"(한, 보통 위쪽·파란색/검정 계열 글자) 또는 "cho"(초, 보통 아래쪽·빨간색 계열 글자) 중 하나로 표기합니다.',
+      '각 말의 소속(side)은 "han"(한, 보통 위쪽·빨간색 계열 글자) 또는 "cho"(초, 보통 아래쪽·초록색/파란색 계열 글자) 중 하나로 표기합니다.',
       '사진에 "나의 차례" 또는 "상대 차례" 같은 차례 표시가 보이면, 그것이 한과 초 중 어느 쪽 차례인지 유추해서 turn 필드에 넣어 주세요. 확실하지 않으면 "unknown"으로 표기하세요.',
       '보이는 말만 포함하고, 다음 JSON 형식으로만 답하세요. 다른 설명은 절대 넣지 마세요:',
       '{"pieces": [{"row": 0, "col": 4, "type": "궁", "side": "han"}], "turn": "han"}'
