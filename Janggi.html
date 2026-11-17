@@ -844,13 +844,13 @@ function think(board, side, level, ban) {
   function repCount(side) {
     return repCountList(history.filter(function (h) { return h.side === side; }));
   }
-  // side가 m을 두면 반복 횟수가 경고선(5회)을 넘는가 → 컴퓨터가 피할 수
+  // side가 m을 두면 반복 횟수가 9회에 이르는가 → 컴퓨터가 피할 수(10회 패배 방지)
   function repBanList(side) {
     var lm = legalMoves(board, side), own = history.filter(function (h) { return h.side === side; }), ban = [];
     if (lm.length < 2) return ban;
     lm.forEach(function (m) {
       var e = { m: m, cap: board[m & 127], alt: true };
-      if (repCountList(own.concat([e])) > REP_WARN) ban.push(m);
+      if (repCountList(own.concat([e])) >= REP_LOSE - 1) ban.push(m); // 패배 직전(9회)만 피함 — 평소 최선수를 해치지 않도록
     });
     return ban;
   }
