@@ -340,7 +340,7 @@ var ORTH = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 var LEVELS = {
   1: { depth: 1, noise: 70, q: 1, time: 1500 },
   2: { depth: 2, noise: 35, q: 2, time: 2000 },
-  3: { depth: 3, noise: 0, q: 4, time: 3000 },
+  3: { depth: 3, noise: 0, openNoise: 15, openPly: 8, q: 4, time: 3000 },
   4: { depth: 5, noise: 0, q: 5, time: 2500 },
   5: { depth: 12, noise: 0, q: 6, time: 3500 }
 };
@@ -574,7 +574,7 @@ function negamax(b, depth, alpha, beta, side, ply) {
 }
 
 // 컴퓨터의 수 결정
-function think(board, side, level, ban) {
+function think(board, side, level, ban, ply) {
   var b = Int8Array.from(board);
   var root = legalMoves(b, side);
   if (!root.length) return -1;
@@ -589,7 +589,10 @@ function think(board, side, level, ban) {
   orderMoves(b, root, 0);
   var i, m, f, t, cap, sc;
 
-  if (cfg.noise) {
+  // 3단계: 초반 몇 수(openPly 수 이내)만 약한 무작위로 변화를 줌
+  var noise = cfg.noise || ((ply | 0) < (cfg.openPly || 0) ? cfg.openNoise : 0);
+
+  if (noise) {
     var scores = null;
     for (var d = 1; d <= cfg.depth; d++) {
       try {
@@ -610,7 +613,7 @@ function think(board, side, level, ban) {
     if (!scores) return root[0];
     var bi = 0, bv = -INF;
     for (i = 0; i < root.length; i++) {
-      var v = scores[i] + (Math.random() * 2 - 1) * cfg.noise;
+      var v = scores[i] + (Math.random() * 2 - 1) * noise;
       if (scores[i] > MATE / 2) v += 1e6;
       if (scores[i] < -MATE / 2) v -= 1e6;
       if (v > bv) { bv = v; bi = i; }
@@ -908,7 +911,7 @@ function think(board, side, level, ban) {
   function makeWorker() {
     try {
       var src = document.getElementById('engine').textContent +
-        '\nonmessage=function(e){var d=e.data;postMessage({id:d.id,move:think(d.board,d.side,d.level,d.ban)});};';
+        '\nonmessage=function(e){var d=e.data;postMessage({id:d.id,move:think(d.board,d.side,d.level,d.ban,d.ply)});};';
       var w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
       w.onmessage = function (e) {
         if (pending && e.data.id === pending.id) { var p = pending; pending = null; p.done(e.data.move); }
@@ -922,7 +925,7 @@ function think(board, side, level, ban) {
     } catch (e) { return null; }
   }
   function runLocal(p) {
-    setTimeout(function () { p.done(think(p.board, p.side, p.level, p.ban)); }, 30);
+    setTimeout(function () { p.done(think(p.board, p.side, p.level, p.ban, p.ply)); }, 30);
   }
 
   function requestAI() {
@@ -930,7 +933,7 @@ function think(board, side, level, ban) {
     render();
     var id = ++searchId, started = Date.now(), aiSide = -userSide;
     var req = {
-      id: id, board: Array.from(board), side: aiSide, level: level, ban: repBanList(aiSide),
+      id: id, board: Array.from(board), side: aiSide, level: level, ban: repBanList(aiSide), ply: history.length,
       done: function (m) {
         if (id !== searchId) return;
         var wait = Math.max(0, 400 - (Date.now() - started));
@@ -944,7 +947,7 @@ function think(board, side, level, ban) {
     };
     if (worker) {
       pending = req;
-      worker.postMessage({ id: id, board: req.board, side: aiSide, level: level, ban: req.ban });
+      worker.postMessage({ id: id, board: req.board, side: aiSide, level: level, ban: req.ban, ply: req.ply });
     } else runLocal(req);
   }
 
