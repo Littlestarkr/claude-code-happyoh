@@ -706,7 +706,12 @@
       </label>
       <div id="compress-body" style="display:none;">
         <p class="hint" id="compress-filename"></p>
-        <p class="hint">압축 강도를 고르세요. 강도가 높을수록 파일은 작아지지만 글씨·그림이 흐려질 수 있어요.</p>
+        <p class="hint">문서 유형을 고르세요. 글자가 중심인 문서는 "텍스트 문서"를, 스캔하거나 사진이 많은 문서는 "스캔·사진 문서"를 선택하세요.</p>
+        <div class="mode-toggle">
+          <button type="button" data-doctype="text" class="on">텍스트 문서</button>
+          <button type="button" data-doctype="scan">스캔·사진 문서</button>
+        </div>
+        <p class="hint" style="margin-top:12px;">압축 강도를 고르세요. 강도가 높을수록 파일은 작아지지만 글씨·그림이 흐려질 수 있어요.</p>
         <div class="mode-toggle">
           <button type="button" data-level="low">낮음</button>
           <button type="button" data-level="medium" class="on">보통</button>
@@ -717,7 +722,8 @@
         </div>
         <button class="btn" id="compress-btn">PDF 압축하기</button>
         <div class="status" id="compress-status"></div>
-        <p class="hint">각 쪽을 그림으로 다시 그려서 저장하는 방식이라, 저장된 PDF의 글자는 마우스로 선택하거나 검색할 수 없게 돼요. 스캔한 문서나 사진이 많은 PDF에 효과적이고, 글자만 있는 PDF는 이미 작아서 압축해도 용량이 줄지 않거나 오히려 커질 수 있어요.</p>
+        <p class="hint" id="compress-hint-text" data-doctype="text">글자(텍스트)는 그대로 벡터로 남겨 선택·검색이 계속 가능해요. PDF 구조를 정리하고, 문서 안에 들어있는 사진만 가려서 줄여요. 이미 최적화된 문서는 용량이 거의 줄지 않을 수 있고, 그런 경우 원본을 그대로 유지해요.</p>
+        <p class="hint" id="compress-hint-text-scan" data-doctype="scan" style="display:none;">각 쪽을 그림으로 다시 그려서 저장하는 방식이라, 저장된 PDF의 글자는 마우스로 선택하거나 검색할 수 없게 돼요. 스캔한 문서나 사진이 많은 PDF에 효과적이고, 글자만 있는 PDF는 이미 작아서 압축해도 용량이 줄지 않거나 오히려 커질 수 있어요. 그런 경우 원본을 그대로 유지해요.</p>
       </div>
     </div>
   </div>
@@ -3986,17 +3992,19 @@ pwDecBtn.addEventListener('click', async ()=>{
 });
 
 // ---------- 압축 ----------
-// pdf.js로 각 쪽을 그림(JPEG)으로 다시 그린 뒤 pdf-lib으로 PDF를 새로 만든다.
-// pdf-lib·pdf.js만으로는 글자(텍스트)를 그대로 둔 채 압축할 방법이 없어서, 모든 쪽을 사진처럼 저장하는 방식을 쓴다.
+// "텍스트 문서": 글자는 벡터로 그대로 두고, pdf-lib으로 구조만 정리(객체 스트림 저장,
+//   메타데이터·안 쓰는 객체 정리)하고 문서 안에 들어있는 사진(JPEG)만 가려서 다시 압축한다.
+// "스캔·사진 문서": pdf.js로 각 쪽을 그림(JPEG)으로 다시 그린 뒤 pdf-lib으로 PDF를 새로 만든다.
 const COMPRESS_LEVELS = {
-  low:    { dpi: 200, quality: 0.85 },
-  medium: { dpi: 150, quality: 0.7 },
-  high:   { dpi: 100, quality: 0.5 }
+  low:    { dpi: 200, quality: 0.85, maxImageDim: 2000 },
+  medium: { dpi: 150, quality: 0.7,  maxImageDim: 1600 },
+  high:   { dpi: 100, quality: 0.5,  maxImageDim: 1200 }
 };
 const COMPRESS_MAX_BYTES = 150 * 1024 * 1024; // 150MB
 
 let compressFile = null;
 let compressLevel = 'medium';
+let compressDocType = 'text';
 
 const compressDrop = document.getElementById('compress-drop');
 const compressInput = document.getElementById('compress-input');
@@ -4005,7 +4013,10 @@ const compressFilenameEl = document.getElementById('compress-filename');
 const compressFilenameInput = document.getElementById('compress-filename-input');
 const compressBtn = document.getElementById('compress-btn');
 const compressStatus = document.getElementById('compress-status');
-const compressLevelBtns = document.querySelectorAll('#panel-compress .mode-toggle button');
+const compressLevelBtns = document.querySelectorAll('#panel-compress .mode-toggle button[data-level]');
+const compressDocTypeBtns = document.querySelectorAll('#panel-compress .mode-toggle button[data-doctype]');
+const compressHintText = document.getElementById('compress-hint-text');
+const compressHintTextScan = document.getElementById('compress-hint-text-scan');
 
 ['dragenter','dragover'].forEach(ev=>compressDrop.addEventListener(ev, e=>{e.preventDefault(); compressDrop.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>compressDrop.addEventListener(ev, e=>{e.preventDefault(); compressDrop.classList.remove('drag');}));
@@ -4016,6 +4027,14 @@ compressLevelBtns.forEach(btn=>btn.addEventListener('click', ()=>{
   compressLevelBtns.forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
   compressLevel = btn.dataset.level;
+}));
+
+compressDocTypeBtns.forEach(btn=>btn.addEventListener('click', ()=>{
+  compressDocTypeBtns.forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  compressDocType = btn.dataset.doctype;
+  compressHintText.style.display = compressDocType === 'text' ? '' : 'none';
+  compressHintTextScan.style.display = compressDocType === 'scan' ? '' : 'none';
 }));
 
 compressFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
@@ -4064,6 +4083,79 @@ async function compressPdfBytes(file, level){
   return await outDoc.save();
 }
 
+// 문서 안에 들어있는 JPEG(DCTDecode) 사진만 가려서 다시 압축한다. 글자(벡터)에는 손대지 않는다.
+// 디코딩이나 변환이 안 되는 사진은 건너뛰고 원본 그대로 둔다(최선형 처리).
+async function recompressEmbeddedJpegs(doc, level){
+  const settings = COMPRESS_LEVELS[level];
+  const { PDFName, PDFArray, PDFRawStream, PDFNumber } = PDFLib;
+  const objects = doc.context.enumerateIndirectObjects();
+  for(const [ref, obj] of objects){
+    try{
+      if(!(obj instanceof PDFRawStream)) continue;
+      const dict = obj.dict;
+      const subtype = dict.lookup(PDFName.of('Subtype'));
+      if(!subtype || String(subtype) !== '/Image') continue;
+      if(dict.lookup(PDFName.of('ImageMask'))) continue;
+      const filter = dict.lookup(PDFName.of('Filter'));
+      const filters = filter instanceof PDFArray
+        ? Array.from({length: filter.size()}, (_, i)=>String(filter.get(i)))
+        : (filter ? [String(filter)] : []);
+      if(filters.length !== 1 || filters[0] !== '/DCTDecode') continue; // 단일 JPEG만 처리
+      const colorSpace = dict.lookup(PDFName.of('ColorSpace'));
+      if(colorSpace && /Indexed|CMYK|Separation/.test(String(colorSpace))) continue;
+      const raw = obj.getContents ? obj.getContents() : obj.contents;
+      if(!raw || raw.length < 20000) continue; // 작은 사진은 건드리지 않음
+      const bitmap = await createImageBitmap(new Blob([raw], {type:'image/jpeg'}));
+      const scale = Math.min(1, settings.maxImageDim / Math.max(bitmap.width, bitmap.height));
+      const outW = Math.max(1, Math.round(bitmap.width * scale));
+      const outH = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = outW; canvas.height = outH;
+      const ctx = canvas.getContext('2d');
+      if(!ctx){ bitmap.close && bitmap.close(); continue; }
+      ctx.drawImage(bitmap, 0, 0, outW, outH);
+      bitmap.close && bitmap.close();
+      const newBlob = await canvasToBlob(canvas, 'image/jpeg', settings.quality);
+      const newBytes = new Uint8Array(await newBlob.arrayBuffer());
+      if(newBytes.length >= raw.length) continue; // 효과 없으면 원본 유지
+      const newDict = dict.clone(doc.context);
+      newDict.set(PDFName.of('Width'), PDFNumber.of(outW));
+      newDict.set(PDFName.of('Height'), PDFNumber.of(outH));
+      newDict.set(PDFName.of('Length'), PDFNumber.of(newBytes.length));
+      newDict.set(PDFName.of('Filter'), PDFName.of('DCTDecode'));
+      newDict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
+      newDict.delete(PDFName.of('DecodeParms'));
+      doc.context.assign(ref, PDFRawStream.of(newDict, newBytes));
+    }catch(e){ continue; } // 이 사진은 건너뛰고 다음으로
+  }
+}
+
+// "텍스트 문서" 압축: 글자는 벡터로 그대로 두고 구조만 정리한다.
+// - 새 문서를 만들어 쪽만 옮겨 담아서(copyPages) 안 쓰는 객체를 떨어낸다.
+// - 메타데이터를 정리한다.
+// - 문서 안에 들어있는 JPEG 사진만 가려서 다시 압축한다.
+// - object streams로 저장해 구조를 더 작게 만든다(pdf-lib 기본값).
+async function compressPdfTextBytes(file, level){
+  if(typeof PDFLib === 'undefined' || window.__pdfLibFailed){ const e = new Error('처리 엔진을 불러오지 못했어요.'); e.code='PDFJS_FAIL'; throw e; }
+  const srcBytes = await file.arrayBuffer();
+  let srcDoc;
+  try{
+    srcDoc = await PDFLib.PDFDocument.load(srcBytes);
+  }catch(err){
+    if(err instanceof PDFLib.EncryptedPDFError || /is encrypted/i.test((err && err.message) || '')){
+      const e = new Error('암호로 보호된 파일이에요.'); e.code='ENCRYPTED'; throw e;
+    }
+    throw err;
+  }
+  const outDoc = await PDFLib.PDFDocument.create();
+  const pages = await outDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+  pages.forEach(p=>outDoc.addPage(p));
+  outDoc.setTitle(''); outDoc.setAuthor(''); outDoc.setSubject(''); outDoc.setKeywords([]);
+  outDoc.setProducer(''); outDoc.setCreator('');
+  await recompressEmbeddedJpegs(outDoc, level);
+  return await outDoc.save({useObjectStreams: true});
+}
+
 compressBtn.addEventListener('click', async ()=>{
   const PDFDocument = getPDFDocument();
   if(!PDFDocument){ setStatus(compressStatus, '처리 엔진을 불러오지 못해 압축할 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
@@ -4072,12 +4164,14 @@ compressBtn.addEventListener('click', async ()=>{
   setStatus(compressStatus, '압축하는 중… 쪽수가 많으면 시간이 걸려요.');
   try{
     const originalSize = compressFile.size;
-    const outBytes = await compressPdfBytes(compressFile, compressLevel);
+    const outBytes = compressDocType === 'text'
+      ? await compressPdfTextBytes(compressFile, compressLevel)
+      : await compressPdfBytes(compressFile, compressLevel);
     const newSize = outBytes.byteLength;
-    await downloadBlob(outBytes, toPdfName(compressFilenameInput.value, 'compressed'));
     if(newSize >= originalSize){
-      setStatus(compressStatus, `저장했지만 용량은 줄지 않았어요(원본 ${fmtSize(originalSize)} → 결과 ${fmtSize(newSize)}). 이미 압축된 PDF이거나 글자 위주 문서라면 이런 경우가 있어요.`, '');
+      setStatus(compressStatus, `용량이 줄지 않아 원본을 그대로 두었어요(원본 ${fmtSize(originalSize)} → 결과 ${fmtSize(newSize)}). 이미 최적화된 PDF이거나, ${compressDocType === 'text' ? '사진이 거의 없는 글자 위주 문서' : '글자 위주 문서'}라면 이런 경우가 있어요.`, '');
     } else {
+      await downloadBlob(outBytes, toPdfName(compressFilenameInput.value, 'compressed'));
       const pct = Math.round((1 - newSize/originalSize) * 100);
       setStatus(compressStatus, `완료! ${fmtSize(originalSize)} → ${fmtSize(newSize)} (${pct}% 줄었어요)`, 'ok');
     }
@@ -4085,6 +4179,7 @@ compressBtn.addEventListener('click', async ()=>{
     console.error(err);
     if(err && err.code === 'declined') setStatus(compressStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
     else if(err && err.code === 'PDFJS_FAIL') setStatus(compressStatus, '처리 엔진을 불러오지 못해 압축할 수 없어요. 위 안내를 확인해 주세요.', 'err');
+    else if(err && err.code === 'ENCRYPTED') setStatus(compressStatus, '암호로 보호된 파일은 이 방식으로 압축할 수 없어요. "암호넣기" 메뉴의 "암호 해제" 기능으로 암호를 먼저 푼 뒤 다시 시도해 주세요.', 'err');
     else if(err && (err.code === 'CANVAS_FAIL' || err.name === 'RangeError' || /memory|allocat/i.test((err.message)||''))){
       setStatus(compressStatus, '파일이 너무 크거나 복잡해서 이 기기에서는 압축하지 못했어요. 압축 강도를 "높음"으로 바꾸거나 더 작은 파일로 시도해 보세요.', 'err');
     }
