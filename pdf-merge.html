@@ -164,8 +164,8 @@
   .group-row .group-del{border:none; background:none; color:var(--danger); font-size:1.1rem; cursor:pointer; padding:2px 4px;}
   .group-row .group-status{flex-basis:100%; order:4; font-size:.78rem; color:var(--sub); min-height:1em;}
   /* 편집(서명·이미지 넣기) */
-  .edit-stage{position:relative; margin:12px auto 0; box-shadow:0 0 0 1px var(--border); background:#fff; line-height:0; user-select:none; -webkit-user-select:none; overflow:hidden;}
-  .edit-stage canvas{display:block;}
+  .edit-stage{position:relative; margin:12px auto 0; box-shadow:0 0 0 1px var(--border); background:#fff; line-height:0; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; overflow:hidden;}
+  .edit-stage canvas{display:block; -webkit-touch-callout:none;}
   .edit-item{position:absolute; border:1.5px dashed var(--accent); touch-action:none; cursor:move; line-height:0;}
   .edit-item img{width:100%; height:100%; display:block; pointer-events:none; -webkit-user-drag:none;}
   .edit-item .rh{
@@ -183,7 +183,7 @@
   }
   .privacy-note b{color:var(--text);}
   #edit-drop{display:block;}
-  .pen-overlay{position:absolute; inset:0; z-index:5; cursor:crosshair; touch-action:none; background:rgba(37,99,235,.05);}
+  .pen-overlay{position:absolute; inset:0; z-index:5; cursor:crosshair; touch-action:none; -webkit-touch-callout:none; background:rgba(37,99,235,.05);}
   .pen-rect{position:absolute; border:2px solid var(--accent); background:rgba(37,99,235,.15); pointer-events:none;}
   .pad-modal{
     position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.55);
@@ -191,8 +191,8 @@
   }
   .pad-card{background:var(--card); color:var(--text); border-radius:14px; padding:16px; width:100%; max-width:680px;}
   .pad-title{font-weight:700; margin-bottom:10px;}
-  .pad-wrap{background:#fff; border:1px solid var(--border); border-radius:10px; line-height:0; touch-action:none; margin:0 auto;}
-  .pad-wrap canvas{display:block; width:100%; height:100%; touch-action:none; cursor:crosshair;}
+  .pad-wrap{background:#fff; border:1px solid var(--border); border-radius:10px; line-height:0; touch-action:none; -webkit-touch-callout:none; margin:0 auto;}
+  .pad-wrap canvas{display:block; width:100%; height:100%; touch-action:none; -webkit-touch-callout:none; cursor:crosshair;}
 
   /* 앱 설치 (페이지 맨 아래) */
   #install-area{margin-top:28px; text-align:center;}
@@ -2128,15 +2128,17 @@ function initSignEditor(o){
       it.v = Math.min(Math.max(0, it.v), Math.max(0, 1 - hFrac));
     };
     let mode = null, sx = 0, sy = 0, su = 0, sv = 0, sw = 0;
+    el.addEventListener('contextmenu', e=>e.preventDefault());
     el.addEventListener('pointerdown', e=>{
       if(e.target.classList.contains('del')) return;
+      e.preventDefault(); e.stopPropagation();
       mode = e.target.classList.contains('rh') ? 'resize' : 'move';
       sx = e.clientX; sy = e.clientY; su = it.u; sv = it.v; sw = it.w;
-      el.setPointerCapture(e.pointerId);
-      e.preventDefault(); e.stopPropagation();
+      try{ el.setPointerCapture(e.pointerId); }catch(err){ /* 일부 브라우저는 포인터 캡처를 지원하지 않아도 계속 진행 */ }
     });
     el.addEventListener('pointermove', e=>{
       if(!mode) return;
+      e.preventDefault();
       const dx = e.clientX - sx, dy = e.clientY - sy;
       if(mode === 'move'){
         it.u = su + dx / stageW; it.v = sv + dy / stageH;
@@ -2265,16 +2267,18 @@ function initSignEditor(o){
     };
     const box = p=>({x: Math.min(sx, p.x), y: Math.min(sy, p.y), w: Math.abs(p.x - sx), h: Math.abs(p.y - sy)});
     const ov = penOverlay;
+    ov.addEventListener('contextmenu', e=>e.preventDefault());
     ov.addEventListener('pointerdown', e=>{
+      e.preventDefault();
       const p = local(e); sx = p.x; sy = p.y; dragging = true;
       if(rectEl) rectEl.remove();
       rectEl = document.createElement('div'); rectEl.className = 'pen-rect';
       ov.appendChild(rectEl);
-      ov.setPointerCapture(e.pointerId);
-      e.preventDefault();
+      try{ ov.setPointerCapture(e.pointerId); }catch(err){ /* 일부 브라우저는 포인터 캡처를 지원하지 않아도 계속 진행 */ }
     });
     ov.addEventListener('pointermove', e=>{
       if(!dragging) return;
+      e.preventDefault();
       const b = box(local(e));
       rectEl.style.left = b.x + 'px'; rectEl.style.top = b.y + 'px';
       rectEl.style.width = b.w + 'px'; rectEl.style.height = b.h + 'px';
@@ -2292,7 +2296,11 @@ function initSignEditor(o){
       setStatus(status, '');
       openPad(penRectFrac);
     });
-    ov.addEventListener('pointercancel', ()=>{ dragging = false; });
+    ov.addEventListener('pointercancel', ()=>{
+      dragging = false;
+      if(rectEl){ rectEl.remove(); rectEl = null; }
+      setStatus(status, '선택이 중간에 취소됐어요. 다시 끌어서 선택해 주세요.', 'err');
+    });
   });
 
   const padModal = id('pad-modal');
@@ -2327,17 +2335,19 @@ function initSignEditor(o){
   }
   function padWidth(p){ return Math.max(1, 2.8 * padDpr * (0.55 + p * 0.9)); }
 
+  padCanvas.addEventListener('contextmenu', e=>e.preventDefault());
   padCanvas.addEventListener('pointerdown', e=>{
+    e.preventDefault();
     padDrawing = true;
     padHint.textContent = PAD_HINT; padHint.style.color = '';
-    padCanvas.setPointerCapture(e.pointerId);
+    try{ padCanvas.setPointerCapture(e.pointerId); }catch(err){ /* 일부 브라우저는 포인터 캡처를 지원하지 않아도 계속 진행 */ }
     const pt = padPoint(e);
     padLast = pt; padMid = pt;
     padCtx.beginPath(); padCtx.arc(pt.x, pt.y, padWidth(pt.p)/2, 0, Math.PI*2); padCtx.fill();
-    e.preventDefault();
   });
   padCanvas.addEventListener('pointermove', e=>{
     if(!padDrawing) return;
+    e.preventDefault();
     const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
     for(const ev of evs){
       const pt = padPoint(ev);
@@ -2348,9 +2358,12 @@ function initSignEditor(o){
       padCtx.stroke();
       padMid = mid; padLast = pt;
     }
-    e.preventDefault();
   });
-  ['pointerup','pointercancel'].forEach(ev=>padCanvas.addEventListener(ev, ()=>{ padDrawing = false; }));
+  padCanvas.addEventListener('pointerup', ()=>{ padDrawing = false; });
+  padCanvas.addEventListener('pointercancel', ()=>{
+    if(padDrawing) padHint.textContent = '그리기가 중간에 끊겼어요. 이어서 그리거나 "지우기" 후 다시 써 주세요.';
+    padDrawing = false;
+  });
 
   id('pad-clear').addEventListener('click', ()=>{
     if(padCtx) padCtx.clearRect(0, 0, padCanvas.width, padCanvas.height);
