@@ -294,6 +294,7 @@
     <div class="tab" data-tab="img2pdf">이미지→PDF</div>
     <div class="tab" data-tab="password">암호넣기</div>
     <div class="tab" data-tab="sign">서명하기</div>
+    <div class="tab" data-tab="compress">압축</div>
   </div>
 
   <!-- 합치기 -->
@@ -692,6 +693,31 @@
         <button class="btn" id="pw-dec-btn" disabled>암호 해제하기</button>
         <div class="status" id="pw-dec-status"></div>
         <p class="hint">이 도구로 암호를 설정한 파일이나, 비교적 단순한(RC4) 암호 방식의 PDF를 지원해요. 최신 고급 암호화(AES)나 특수한 압축 구조를 쓰는 파일은 해제하지 못할 수 있어요.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 압축 -->
+  <div class="panel" id="panel-compress">
+    <div class="card">
+      <label class="drop" id="compress-drop" for="compress-input">
+        압축할 PDF 파일 1개를<br>끌어다 놓거나 탭해서 선택하세요
+        <input type="file" id="compress-input" accept="application/pdf">
+      </label>
+      <div id="compress-body" style="display:none;">
+        <p class="hint" id="compress-filename"></p>
+        <p class="hint">압축 강도를 고르세요. 강도가 높을수록 파일은 작아지지만 글씨·그림이 흐려질 수 있어요.</p>
+        <div class="mode-toggle">
+          <button type="button" data-level="low">낮음</button>
+          <button type="button" data-level="medium" class="on">보통</button>
+          <button type="button" data-level="high">높음</button>
+        </div>
+        <div class="range-row" style="margin-top:12px;">
+          <input type="text" id="compress-filename-input" placeholder="저장할 파일 이름">
+        </div>
+        <button class="btn" id="compress-btn">PDF 압축하기</button>
+        <div class="status" id="compress-status"></div>
+        <p class="hint">각 쪽을 그림으로 다시 그려서 저장하는 방식이라, 저장된 PDF의 글자는 마우스로 선택하거나 검색할 수 없게 돼요. 스캔한 문서나 사진이 많은 PDF에 효과적이고, 글자만 있는 PDF는 이미 작아서 압축해도 용량이 줄지 않거나 오히려 커질 수 있어요.</p>
       </div>
     </div>
   </div>
@@ -3957,6 +3983,114 @@ pwDecBtn.addEventListener('click', async ()=>{
     else setStatus(pwDecStatus, '암호를 해제하는 중 오류가 발생했어요.', 'err');
   }
   updatePwDecBtn();
+});
+
+// ---------- 압축 ----------
+// pdf.js로 각 쪽을 그림(JPEG)으로 다시 그린 뒤 pdf-lib으로 PDF를 새로 만든다.
+// pdf-lib·pdf.js만으로는 글자(텍스트)를 그대로 둔 채 압축할 방법이 없어서, 모든 쪽을 사진처럼 저장하는 방식을 쓴다.
+const COMPRESS_LEVELS = {
+  low:    { dpi: 200, quality: 0.85 },
+  medium: { dpi: 150, quality: 0.7 },
+  high:   { dpi: 100, quality: 0.5 }
+};
+const COMPRESS_MAX_BYTES = 150 * 1024 * 1024; // 150MB
+
+let compressFile = null;
+let compressLevel = 'medium';
+
+const compressDrop = document.getElementById('compress-drop');
+const compressInput = document.getElementById('compress-input');
+const compressBody = document.getElementById('compress-body');
+const compressFilenameEl = document.getElementById('compress-filename');
+const compressFilenameInput = document.getElementById('compress-filename-input');
+const compressBtn = document.getElementById('compress-btn');
+const compressStatus = document.getElementById('compress-status');
+const compressLevelBtns = document.querySelectorAll('#panel-compress .mode-toggle button');
+
+['dragenter','dragover'].forEach(ev=>compressDrop.addEventListener(ev, e=>{e.preventDefault(); compressDrop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>compressDrop.addEventListener(ev, e=>{e.preventDefault(); compressDrop.classList.remove('drag');}));
+compressDrop.addEventListener('drop', e=>{ if(e.dataTransfer.files[0]) loadCompressFile(e.dataTransfer.files[0]); });
+compressInput.addEventListener('change', e=>{ if(e.target.files[0]) loadCompressFile(e.target.files[0]); compressInput.value=''; });
+
+compressLevelBtns.forEach(btn=>btn.addEventListener('click', ()=>{
+  compressLevelBtns.forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  compressLevel = btn.dataset.level;
+}));
+
+compressFilenameInput.addEventListener('input', e=>{ e.target.dataset.touched = '1'; });
+
+function loadCompressFile(file){
+  setStatus(compressStatus, '');
+  if(file.size > COMPRESS_MAX_BYTES){
+    setStatus(compressStatus, `파일이 너무 커요(${fmtSize(file.size)}). 150MB 이하 PDF만 이 도구로 압축할 수 있어요.`, 'err');
+    compressBody.style.display = 'none';
+    compressFile = null;
+    return;
+  }
+  compressFile = file;
+  compressFilenameEl.textContent = `${file.name} · 원본 ${fmtSize(file.size)}`;
+  if(!compressFilenameInput.dataset.touched) compressFilenameInput.value = file.name.replace(/\.pdf$/i,'') + '_compressed';
+  compressBody.style.display = 'block';
+}
+
+async function compressPdfBytes(file, level){
+  if(typeof pdfjsLib === 'undefined' || window.__pdfjsFailed){ const e = new Error('처리 엔진을 불러오지 못했어요.'); e.code='PDFJS_FAIL'; throw e; }
+  const settings = COMPRESS_LEVELS[level];
+  const srcBytes = await file.arrayBuffer();
+  // 암호로 보호된 파일인지 먼저 확인(pdf-lib으로 열 수 있는지)
+  await PDFLib.PDFDocument.load(srcBytes.slice(0), {ignoreEncryption:true});
+  const pdfjsDoc = await pdfjsLib.getDocument({data: srcBytes.slice(0)}).promise;
+  const outDoc = await PDFLib.PDFDocument.create();
+  const pageCount = pdfjsDoc.numPages;
+  const scale = settings.dpi / 72;
+  for(let i=1;i<=pageCount;i++){
+    const page = await pdfjsDoc.getPage(i);
+    const vp1 = page.getViewport({scale:1});
+    const viewport = page.getViewport({scale});
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(viewport.width));
+    canvas.height = Math.max(1, Math.round(viewport.height));
+    const ctx = canvas.getContext('2d');
+    if(!ctx){ const e = new Error('페이지를 그릴 캔버스를 만들 수 없어요.'); e.code='CANVAS_FAIL'; throw e; }
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({canvasContext: ctx, viewport}).promise;
+    const blob = await canvasToBlob(canvas, 'image/jpeg', settings.quality);
+    const jpgBytes = new Uint8Array(await blob.arrayBuffer());
+    const img = await outDoc.embedJpg(jpgBytes);
+    const outPage = outDoc.addPage([vp1.width, vp1.height]);
+    outPage.drawImage(img, {x:0, y:0, width: vp1.width, height: vp1.height});
+  }
+  return await outDoc.save();
+}
+
+compressBtn.addEventListener('click', async ()=>{
+  const PDFDocument = getPDFDocument();
+  if(!PDFDocument){ setStatus(compressStatus, '처리 엔진을 불러오지 못해 압축할 수 없어요. 위 안내를 확인해 주세요.', 'err'); return; }
+  if(!compressFile){ setStatus(compressStatus, '먼저 PDF 파일을 선택하세요.', 'err'); return; }
+  compressBtn.disabled = true;
+  setStatus(compressStatus, '압축하는 중… 쪽수가 많으면 시간이 걸려요.');
+  try{
+    const originalSize = compressFile.size;
+    const outBytes = await compressPdfBytes(compressFile, compressLevel);
+    const newSize = outBytes.byteLength;
+    await downloadBlob(outBytes, toPdfName(compressFilenameInput.value, 'compressed'));
+    if(newSize >= originalSize){
+      setStatus(compressStatus, `저장했지만 용량은 줄지 않았어요(원본 ${fmtSize(originalSize)} → 결과 ${fmtSize(newSize)}). 이미 압축된 PDF이거나 글자 위주 문서라면 이런 경우가 있어요.`, '');
+    } else {
+      const pct = Math.round((1 - newSize/originalSize) * 100);
+      setStatus(compressStatus, `완료! ${fmtSize(originalSize)} → ${fmtSize(newSize)} (${pct}% 줄었어요)`, 'ok');
+    }
+  }catch(err){
+    console.error(err);
+    if(err && err.code === 'declined') setStatus(compressStatus, '저장을 취소했어요. 다시 누르면 저장할 수 있어요.', '');
+    else if(err && err.code === 'PDFJS_FAIL') setStatus(compressStatus, '처리 엔진을 불러오지 못해 압축할 수 없어요. 위 안내를 확인해 주세요.', 'err');
+    else if(err && (err.code === 'CANVAS_FAIL' || err.name === 'RangeError' || /memory|allocat/i.test((err.message)||''))){
+      setStatus(compressStatus, '파일이 너무 크거나 복잡해서 이 기기에서는 압축하지 못했어요. 압축 강도를 "높음"으로 바꾸거나 더 작은 파일로 시도해 보세요.', 'err');
+    }
+    else setStatus(compressStatus, '압축하는 중 오류가 발생했어요. 비밀번호로 보호된 파일은 지원하지 않습니다.', 'err');
+  }
+  compressBtn.disabled = false;
 });
 </script>
 </body>
