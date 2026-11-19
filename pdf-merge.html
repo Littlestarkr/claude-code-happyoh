@@ -234,12 +234,16 @@
   .scan-grid-item .badge{position:absolute; top:6px; left:6px; font-size:.7rem; padding:2px 6px; border-radius:6px; background:rgba(0,0,0,.55); color:#fff;}
   .scan-grid-item .badge.ok{background:var(--ok);}
   .scan-grid-item .no{margin-top:6px; font-size:1.1rem; font-weight:800;}
-  #share-bar{position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); z-index:3500; display:none; align-items:center; gap:8px; padding:10px 12px; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,.25);}
-  #share-bar .msg{flex:1; font-size:.88rem; line-height:1.35;}
-  #share-bar button{border:0; border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer;}
-  #share-btn{background:var(--accent); color:#fff;}
-  #share-close{background:transparent; color:var(--sub); padding:10px 8px !important;}
-  body.has-share-bar{padding-bottom:84px;}
+  .inline-result{display:none; margin-top:14px; padding:12px; background:var(--bg); border:1px solid var(--accent); border-radius:14px;}
+  .inline-result .msg{font-size:.88rem; line-height:1.35; margin-bottom:10px;}
+  .inline-result .files{display:flex; flex-direction:column; gap:8px; margin-bottom:10px;}
+  .inline-result .file-row{display:flex; align-items:center; gap:8px;}
+  .inline-result .file-row .name{flex:1; font-size:.85rem; word-break:break-all; color:var(--sub);}
+  .inline-result .file-row a.dl-btn{flex-shrink:0; background:var(--accent); color:#fff; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700; font-size:.9rem;}
+  .inline-result .actions{display:flex; gap:8px;}
+  .inline-result .actions button{border:0; border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer;}
+  #inline-share-btn{background:var(--card); border:1px solid var(--border) !important; color:var(--text);}
+  #inline-close-btn{background:transparent; color:var(--sub);}
   #scan-magnifier{position:fixed; width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; background:#fff no-repeat; display:none; pointer-events:none; z-index:4000; box-shadow:0 4px 10px rgba(0,0,0,.3);}
   #scan-camera{display:none; flex-direction:column; align-items:center; justify-content:center; position:fixed; inset:0; background:#000; z-index:2000;}
   #scan-video-box{position:relative; width:100%; max-height:75vh; aspect-ratio:3/4; background:#111; overflow:hidden; display:flex; justify-content:center;}
@@ -744,11 +748,7 @@
   </div>
 </div>
 
-  <div id="share-bar" role="region" aria-label="공유">
-    <div class="msg" id="share-msg">📤 방금 저장한 PDF를 공유할 수 있어요</div>
-    <button type="button" id="share-btn">공유하기</button>
-    <button type="button" id="share-close" aria-label="닫기">✕</button>
-  </div>
+  <div id="inline-result" class="inline-result" role="region" aria-label="저장 결과"></div>
 
 <script>
 // ---------- 앱 안 브라우저(카카오톡·네이버 등) 안내 ----------
@@ -845,6 +845,9 @@ function setStatus(el, msg, type){
   el.textContent = msg || '';
   el.className = 'status' + (type ? ' '+type : '');
 }
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 async function downloadBlobRaw(bytes, filename){
   const blob = new Blob([bytes], {type:'application/pdf'});
   try{
@@ -858,15 +861,21 @@ async function downloadBlobRaw(bytes, filename){
     if(err && (err.code === 'too_large')){ const e = new Error('파일이 너무 커서 저장할 수 없어요.'); e.code='too_large'; throw e; }
     // unavailable/not_granted 등은 아래 대체 방식으로 넘어감
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  // 자동 다운로드를 시도해 본다. 카카오톡·일부 제조사 인앱 브라우저 등에서는
+  // 처리 시간이 걸린 뒤의 클릭이라 "사용자 조작"으로 인정되지 않아 조용히 막히는 경우가 있어서,
+  // 아래 showInlineResult()가 항상 눈에 보이는 다운로드 버튼을 별도로 보여준다.
+  try{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  }catch(err){ /* 자동 다운로드 실패는 무시하고 아래 수동 버튼으로 대체한다 */ }
   return 'saved';
 }
 
-// 저장한 직후에는 어느 탭에서든 '공유하기'를 쓸 수 있게 한다 (폰의 공유 시트로 카톡·메일 등에 전달)
+// 자동 다운로드가 막히는 기기가 있어서, 저장할 때마다 탭 안에 직접 누를 수 있는
+// 다운로드·공유 버튼을 항상 함께 보여준다(화면 밖으로 밀려나지 않도록 고정 위치가 아니라 결과 영역 안에 배치).
 let lastSaved = [], lastSavedAt = 0;
 async function downloadBlob(bytes, filename){
   const status = await downloadBlobRaw(bytes, filename);
@@ -874,36 +883,47 @@ async function downloadBlob(bytes, filename){
   if(now - lastSavedAt > 4000) lastSaved = [];   // 4초 안에 이어서 저장된 파일은 한 묶음(분할 등)으로 본다
   lastSavedAt = now;
   lastSaved.push({bytes, name: filename});
-  showShareBar();
+  showInlineResult();
   return status;
 }
-function showShareBar(){
-  const bar = document.getElementById('share-bar');
-  document.getElementById('share-msg').textContent = lastSaved.length > 1
-    ? `📤 방금 저장한 PDF ${lastSaved.length}개를 공유할 수 있어요`
-    : `📤 "${lastSaved[0].name}"을 공유할 수 있어요`;
-  bar.style.display = 'flex';
-  document.body.classList.add('has-share-bar');
-}
-document.getElementById('share-close').addEventListener('click', ()=>{
-  document.getElementById('share-bar').style.display = 'none';
-  document.body.classList.remove('has-share-bar');
-});
-document.getElementById('share-btn').addEventListener('click', async ()=>{
-  const msg = document.getElementById('share-msg');
-  if(!lastSaved.length) return;
-  const files = lastSaved.map(f=>new File([f.bytes], f.name, {type:'application/pdf'}));
+function showInlineResult(){
+  const box = document.getElementById('inline-result');
+  const activePanel = document.querySelector('.panel.active .card') || document.querySelector('.panel.active');
+  if(activePanel && box.parentElement !== activePanel) activePanel.appendChild(box);
+
+  const filesHtml = lastSaved.map(f=>{
+    const url = URL.createObjectURL(new Blob([f.bytes], {type:'application/pdf'}));
+    return `<div class="file-row"><span class="name">${escapeHtml(f.name)}</span><a class="dl-btn" href="${url}" download="${escapeHtml(f.name)}">📥 다운로드</a></div>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="msg">${lastSaved.length > 1 ? `✅ ${lastSaved.length}개 파일을 저장했어요. 자동으로 저장되지 않았다면 아래 버튼을 눌러 주세요.` : '✅ 파일을 저장했어요. 자동으로 저장되지 않았다면 아래 버튼을 눌러 주세요.'}</div>
+    <div class="files">${filesHtml}</div>
+    <div class="actions">
+      <button type="button" id="inline-share-btn" style="display:none;">공유하기</button>
+      <button type="button" id="inline-close-btn">닫기</button>
+    </div>
+  `;
+  box.style.display = 'block';
+
+  const shareBtn = document.getElementById('inline-share-btn');
+  let canShareFiles = false;
   try{
-    if(navigator.canShare && navigator.canShare({files})){
-      await navigator.share({files, title: files[0].name});
-    }else{
-      msg.textContent = '이 브라우저는 파일 공유를 지원하지 않아요. 크롬(안드로이드)·사파리(아이폰)로 열어 주세요. 저장된 파일은 다운로드 폴더에서 보낼 수 있어요.';
-    }
-  }catch(err){
-    if(err && err.name === 'AbortError') return;   // 공유 창을 그냥 닫은 경우
-    msg.textContent = '공유하지 못했어요. 저장된 파일은 다운로드 폴더에서 보낼 수 있어요.';
+    canShareFiles = !!(navigator.canShare && navigator.canShare({files: lastSaved.map(f=>new File([f.bytes], f.name, {type:'application/pdf'}))}));
+  }catch(err){ canShareFiles = false; }
+  if(canShareFiles){
+    shareBtn.style.display = '';
+    shareBtn.onclick = async ()=>{
+      const files = lastSaved.map(f=>new File([f.bytes], f.name, {type:'application/pdf'}));
+      try{
+        await navigator.share({files, title: files[0].name});
+      }catch(err){
+        if(err && err.name === 'AbortError') return;   // 공유 창을 그냥 닫은 경우
+        alert('공유하지 못했어요. 위 다운로드 버튼으로 저장해 주세요.');
+      }
+    };
   }
-});
+  document.getElementById('inline-close-btn').onclick = ()=>{ box.style.display = 'none'; };
+}
 
 // ---------- 합치기 ----------
 let mergeFiles = [];
