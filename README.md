@@ -18,3 +18,7 @@ Claude Code 작업용 프로젝트 저장소입니다.
 기본 조작: `← →` 이동, `↓` 소프트 드롭, `Space` 하드 드롭, `↑`/`X` 회전, `Z` 반대 회전, `A` 180°, `C` 홀드, `Esc` 일시정지, `R` 재시작
 
 규칙 엔진 자체 테스트는 주소 뒤에 `?test`를 붙여 열면 실행됩니다 (`Tetris.html?test`).
+
+## PDF 도구 (`pdf-merge.html`)
+
+정식 주소는 https://www.littlestar.co.kr/pdf/pdf-merge.html 입니다. 홈페이지 저장소(`Littlestarkr/export3`)의 배포가 이 저장소의 `pdf-merge.html`·`pdf-tool-*`·`pdf-tool.webmanifest`·글꼴 파일을 `/pdf/`로 함께 올립니다(3시간마다, 또는 export3 Actions 'Deploy site' 수동 실행). 옛 주소(`littlestarkr.github.io/claude-code-happyoh/pdf-merge.html`)로 열면 새 주소로 자동 이동합니다.
