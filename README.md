@@ -21,4 +21,4 @@ Claude Code 작업용 프로젝트 저장소입니다.
 
 ## PDF 도구 (`pdf-merge.html`)
 
-정식 주소는 https://www.littlestar.co.kr/pdf/pdf-merge.html 입니다. 홈페이지 저장소(`Littlestarkr/export3`)의 배포가 이 저장소의 `pdf-merge.html`·`pdf-tool-*`·`pdf-tool.webmanifest`·글꼴 파일을 `/pdf/`로 함께 올립니다(3시간마다, 또는 export3 Actions 'Deploy site' 수동 실행). 옛 주소(`littlestarkr.github.io/claude-code-happyoh/pdf-merge.html`)로 열면 새 주소로 자동 이동합니다.
+정식 주소는 https://pdf.littlestar.co.kr/pdf-merge.html 입니다(2026-11-21, 이 저장소의 GitHub Pages에 하위 도메인 `pdf.littlestar.co.kr`을 연결; 루트 `CNAME` 파일). 홈페이지 앱(www.littlestar.co.kr, 범위 "/")과 주소를 나눠야 크롬이 PDF 앱을 따로 설치해 주기 때문에 하위 도메인을 쓴다. 옛 주소(`littlestarkr.github.io/claude-code-happyoh/…`)는 GitHub가 새 도메인으로 넘기고, 홈페이지 사본(`www.littlestar.co.kr/pdf/…`)은 `pdf-merge.html` 맨 앞 스크립트가 새 주소로 넘긴다. 이 저장소의 다른 페이지(장기·테트리스)도 같은 도메인 아래(`pdf.littlestar.co.kr/Janggi.html` 등)로 열린다. `CNAME` 파일을 지우면 연결이 끊긴다.
